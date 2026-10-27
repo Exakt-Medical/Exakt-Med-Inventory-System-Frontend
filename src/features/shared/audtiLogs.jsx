@@ -74,6 +74,53 @@ function AuditLogs({
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
+  const [serverTotalElements, setServerTotalElements] = useState(0);
+
+  // Filter States
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
+  const [selectedModule, setSelectedModule] = useState("All Modules");
+  const [selectedSeverity, setSelectedSeverity] = useState("All Severities");
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 7;
+
+  // Debounce search query (300ms) to prevent server hammering on keystrokes
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // Facility-wide KPI Summary State
+  const [summaryMetrics, setSummaryMetrics] = useState({
+    totalLogs: 0,
+    criticalCount: 0,
+    warningCount: 0,
+    infoCount: 0,
+    successCount: 0,
+  });
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true);
+
+  const fetchSummary = useCallback(async () => {
+    if (!targetFacilityId) return;
+    try {
+      setIsSummaryLoading(true);
+      const summary = await auditLogService.getAuditLogSummary(targetFacilityId);
+      if (summary) {
+        setSummaryMetrics(summary);
+      }
+    } catch (err) {
+      console.error("Failed to load audit log summary KPIs:", err);
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  }, [targetFacilityId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   // Fetch logs from backend
   const fetchLogs = useCallback(async () => {
@@ -85,11 +132,28 @@ function AuditLogs({
     try {
       setIsLoading(true);
       setError(null);
-      const data = await auditLogService.getAuditLogs(targetFacilityId);
-      if (Array.isArray(data)) {
+      const data = await auditLogService.getAuditLogs(
+        targetFacilityId,
+        selectedModule,
+        selectedSeverity,
+        debouncedSearchQuery,
+        currentPage - 1,
+        itemsPerPage,
+        "createdAt",
+        "DESC",
+      );
+      if (data && Array.isArray(data.content)) {
+        setLogs(data.content);
+        setServerTotalPages(data.totalPages || 1);
+        setServerTotalElements(data.totalElements || 0);
+      } else if (Array.isArray(data)) {
         setLogs(data);
+        setServerTotalPages(Math.ceil(data.length / itemsPerPage) || 1);
+        setServerTotalElements(data.length);
       } else {
         setLogs([]);
+        setServerTotalPages(1);
+        setServerTotalElements(0);
       }
     } catch (err) {
       console.error("Failed to load backend audit logs:", err);
@@ -102,103 +166,44 @@ function AuditLogs({
     } finally {
       setIsLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [
+    targetFacilityId,
+    selectedModule,
+    selectedSeverity,
+    debouncedSearchQuery,
+    currentPage,
+    itemsPerPage,
+  ]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Filter States
-  const [searchQuery, setSearchQuery] = useState("");
-  const [selectedModule, setSelectedModule] = useState("All Modules");
-  const [selectedSeverity, setSelectedSeverity] = useState("All Severities");
-  const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 7;
+  // Combined Refresh
+  const handleRefreshAll = () => {
+    fetchLogs();
+    fetchSummary();
+  };
 
   // Modal State
   const [selectedLog, setSelectedLog] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  // 1. Facility & Role Scoped Logs: Filter logs accessible to the current logged-in user's role and active facility
-  const scopedLogs = useMemo(() => {
-    if (!role || !targetFacilityId) return [];
-    return logs.filter((item) => {
-      const matchesFacility =
-        item.facilityId === targetFacilityId ||
-        item.facility === currentFacilityName;
-
-      if (!matchesFacility) return false;
-      if (isAdmin) return true; // Admin sees all logs within the facility
-      if (!item.visibleRoles) return true;
-      if (Array.isArray(item.visibleRoles)) {
-        return item.visibleRoles.includes(role);
-      }
-      if (typeof item.visibleRoles === "string") {
-        return item.visibleRoles
-          .split(",")
-          .map((r) => r.trim())
-          .includes(role);
-      }
-      return true;
-    });
-  }, [logs, role, isAdmin, currentFacilityName, targetFacilityId]);
-
-  // 2. KPI Metrics based on facility & role-scoped logs
+  // KPI Metrics based on dedicated summary API
   const metrics = useMemo(() => {
-    const total = scopedLogs.length;
-    const critical = scopedLogs.filter(
-      (l) => l.severity?.toLowerCase() === "critical",
-    ).length;
-    const warning = scopedLogs.filter(
-      (l) => l.severity?.toLowerCase() === "warning",
-    ).length;
-    const success = scopedLogs.filter(
-      (l) => l.severity?.toLowerCase() === "success",
-    ).length;
-    const info = scopedLogs.filter(
-      (l) => l.severity?.toLowerCase() === "info",
-    ).length;
-    return { total, critical, warning, success, info };
-  }, [scopedLogs]);
+    return {
+      total: summaryMetrics.totalLogs || serverTotalElements,
+      critical: summaryMetrics.criticalCount,
+      warning: summaryMetrics.warningCount,
+      success: summaryMetrics.successCount,
+      info: summaryMetrics.infoCount,
+    };
+  }, [summaryMetrics, serverTotalElements]);
 
-  // 3. User Query & Dropdown Filters
-  const filteredLogs = useMemo(() => {
-    return scopedLogs.filter((log) => {
-      const q = searchQuery.toLowerCase().trim();
-      const idStr = String(log.logCode || log.id || "").toLowerCase();
-      const userNameStr = String(log.userName || "").toLowerCase();
-      const actionLabelStr = String(log.actionLabel || "").toLowerCase();
-      const actionStr = String(log.action || "").toLowerCase();
-      const targetStr = String(log.target || "").toLowerCase();
-      const facilityStr = String(log.facility || "").toLowerCase();
-      const descriptionStr = String(log.description || "").toLowerCase();
-
-      const matchesSearch =
-        idStr.includes(q) ||
-        userNameStr.includes(q) ||
-        actionLabelStr.includes(q) ||
-        actionStr.includes(q) ||
-        targetStr.includes(q) ||
-        facilityStr.includes(q) ||
-        descriptionStr.includes(q);
-
-      const matchesModule =
-        selectedModule === "All Modules" || log.module === selectedModule;
-
-      const matchesSeverity =
-        selectedSeverity === "All Severities" ||
-        log.severity?.toLowerCase() === selectedSeverity.toLowerCase();
-
-      return matchesSearch && matchesModule && matchesSeverity;
-    });
-  }, [scopedLogs, searchQuery, selectedModule, selectedSeverity]);
-
-  // 4. Pagination
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage) || 1;
-  const paginatedLogs = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredLogs.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredLogs, currentPage, itemsPerPage]);
+  // Server-filtered & paginated log records
+  const filteredLogs = logs;
+  const paginatedLogs = logs;
+  const totalPages = serverTotalPages || Math.ceil(filteredLogs.length / itemsPerPage) || 1;
 
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
@@ -347,14 +352,14 @@ function AuditLogs({
         <div className="flex items-center gap-2.5">
           <button
             type="button"
-            onClick={fetchLogs}
-            disabled={isLoading}
+            onClick={handleRefreshAll}
+            disabled={isLoading || isSummaryLoading}
             className="btn-secondary text-xs shadow-xs flex items-center gap-1.5"
             title="Refresh audit records"
           >
             <RefreshCw
               className={`w-3.5 h-3.5 ${
-                isLoading ? "animate-spin text-blue-600" : ""
+                isLoading || isSummaryLoading ? "animate-spin text-blue-600" : ""
               }`}
             />
             <span>Refresh</span>
@@ -748,7 +753,7 @@ function AuditLogs({
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              totalItems={filteredLogs.length}
+              totalItems={serverTotalElements || filteredLogs.length}
               itemsPerPage={itemsPerPage}
               onPageChange={setCurrentPage}
             />

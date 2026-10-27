@@ -113,14 +113,37 @@ const inventoryTransactionService = {
   /**
    * Retrieves chronological transaction movements across the facility.
    */
-  getTransactionsByFacility: async (facilityId, types = [], config = {}) => {
+  getTransactionsByFacility: async (
+    facilityId,
+    types = [],
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
     const response = await axios.get(
-      inventoryTransactionApi.getTransactionsByFacility(facilityId, types),
+      inventoryTransactionApi.getTransactionsByFacility(
+        facilityId,
+        types,
+        page,
+        size,
+        search,
+        sortBy,
+        sortDir,
+      ),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
+    if (response.data && Array.isArray(response.data.content)) {
+      return {
+        ...response.data,
+        content: response.data.content.map(normalizeTransactionEntry),
+      };
+    }
     const list = Array.isArray(response.data) ? response.data : [];
     return list.map(normalizeTransactionEntry);
   },
@@ -128,14 +151,42 @@ const inventoryTransactionService = {
   /**
    * Retrieves chronological transaction movements for a specific SKU.
    */
-  getTransactionsBySku: async (skuId, types = [], config = {}) => {
+  getTransactionsBySku: async (
+    skuId,
+    facilityId,
+    types = [],
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is strictly required to fetch transactions by SKU.");
+    }
     const response = await axios.get(
-      inventoryTransactionApi.getTransactionsBySku(skuId, types),
+      inventoryTransactionApi.getTransactionsBySku(
+        skuId,
+        facilityId,
+        types,
+        page,
+        size,
+        search,
+        sortBy,
+        sortDir,
+      ),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
+    if (response.data && Array.isArray(response.data.content)) {
+      return {
+        ...response.data,
+        content: response.data.content.map(normalizeTransactionEntry),
+      };
+    }
     const list = Array.isArray(response.data) ? response.data : [];
     return list.map(normalizeTransactionEntry);
   },
@@ -150,7 +201,7 @@ const inventoryTransactionService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
@@ -158,17 +209,38 @@ const inventoryTransactionService = {
   /**
    * Retrieves stock adjustment audit logs for a facility.
    */
-  getAdjustmentLogsByFacility: async (facilityId, config = {}) => {
+  getAdjustmentLogsByFacility: async (
+    facilityId,
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
     if (!facilityId) {
       throw new Error("Facility ID is strictly required to fetch adjustment logs.");
     }
     const response = await axios.get(
-      inventoryTransactionApi.getAdjustmentLogsByFacility(facilityId),
+      inventoryTransactionApi.getAdjustmentLogsByFacility(
+        facilityId,
+        page,
+        size,
+        search,
+        sortBy,
+        sortDir,
+      ),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
+    if (response.data && Array.isArray(response.data.content)) {
+      return {
+        ...response.data,
+        content: response.data.content.map(normalizeTransactionEntry),
+      };
+    }
     const list = Array.isArray(response.data) ? response.data : [];
     return list.map(normalizeTransactionEntry);
   },
@@ -176,16 +248,76 @@ const inventoryTransactionService = {
   /**
    * Retrieves stock adjustment audit logs for a specific SKU.
    */
-  getAdjustmentLogsBySku: async (skuId, config = {}) => {
+  getAdjustmentLogsBySku: async (
+    skuId,
+    facilityId,
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is strictly required to fetch adjustment logs by SKU.");
+    }
     const response = await axios.get(
-      inventoryTransactionApi.getAdjustmentLogsBySku(skuId),
+      inventoryTransactionApi.getAdjustmentLogsBySku(
+        skuId,
+        facilityId,
+        page,
+        size,
+        search,
+        sortBy,
+        sortDir,
+      ),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
+    if (response.data && Array.isArray(response.data.content)) {
+      return {
+        ...response.data,
+        content: response.data.content.map(normalizeTransactionEntry),
+      };
+    }
     const list = Array.isArray(response.data) ? response.data : [];
     return list.map(normalizeTransactionEntry);
+  },
+
+  /**
+   * Retrieves aggregated transaction KPI summary for a facility.
+   */
+  getTransactionSummary: async (facilityId, types = [], config = {}) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is strictly required to fetch transaction summary.");
+    }
+    const response = await axios.get(
+      inventoryTransactionApi.getTransactionSummary(facilityId, types),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Retrieves aggregated stock adjustment KPI summary for a facility.
+   */
+  getAdjustmentSummary: async (facilityId, config = {}) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is strictly required to fetch adjustment summary.");
+    }
+    const response = await axios.get(
+      inventoryTransactionApi.getAdjustmentSummary(facilityId),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
+    return response.data;
   },
 };
 
