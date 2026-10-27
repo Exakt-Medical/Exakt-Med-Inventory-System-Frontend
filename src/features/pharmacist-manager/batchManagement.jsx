@@ -340,10 +340,7 @@ function BatchManagement() {
     try {
       setIsOrdersLoading(true);
       setOrdersError(null);
-      const data = await orderService.getAllOrders(activeFacilityId, [
-        "Approved",
-        "Partially_Received",
-      ]);
+      const data = await orderService.getReceivableOrders(activeFacilityId);
       if (Array.isArray(data)) {
         setApprovedOrders(
           data

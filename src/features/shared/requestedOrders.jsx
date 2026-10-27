@@ -103,20 +103,81 @@ function RequestedOrders() {
   }, [facility]);
 
   const [orders, setOrders] = useState([]);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalElements, setTotalElements] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true);
   const [fetchError, setFetchError] = useState(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
   const [priorityFilter, setPriorityFilter] = useState("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
-  // Fetch real order data from backend
+  // Debounce search query by 300ms
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setCurrentPage(1);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  // KPI Metrics from dedicated server summary endpoint
+  const [metrics, setMetrics] = useState({
+    total: 0,
+    pending: 0,
+    approved: 0,
+    partiallyReceived: 0,
+    received: 0,
+    rejected: 0,
+  });
+
+  const fetchSummary = useCallback(async () => {
+    if (!targetFacilityId) {
+      setMetrics({
+        total: 0,
+        pending: 0,
+        approved: 0,
+        partiallyReceived: 0,
+        received: 0,
+        rejected: 0,
+      });
+      setIsSummaryLoading(false);
+      return;
+    }
+
+    try {
+      setIsSummaryLoading(true);
+      const summary = await orderService.getOrderSummary(targetFacilityId);
+      setMetrics({
+        total: Number(summary.totalOrders) || 0,
+        pending: Number(summary.pendingCount) || 0,
+        approved: Number(summary.approvedCount) || 0,
+        partiallyReceived: Number(summary.partiallyReceivedCount) || 0,
+        received: Number(summary.receivedCount) || 0,
+        rejected: Number(summary.deniedCount) || 0,
+      });
+    } catch (err) {
+      console.error("Failed to fetch order summary:", err);
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  }, [targetFacilityId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
+
+  // Fetch paginated order data from backend
   const fetchOrders = useCallback(async () => {
     if (!targetFacilityId) {
       setOrders([]);
+      setTotalPages(1);
+      setTotalElements(0);
       setIsLoading(false);
       return;
     }
@@ -124,11 +185,36 @@ function RequestedOrders() {
     try {
       setIsLoading(true);
       setFetchError(null);
-      const data = await orderService.getAllOrders(targetFacilityId);
-      if (Array.isArray(data)) {
-        setOrders(data.map(normalizeOrder));
+      const params = {
+        facilityId: targetFacilityId,
+        page: currentPage - 1,
+        size: itemsPerPage,
+        sortBy: "createdAt",
+        sortDir: "DESC",
+      };
+      if (debouncedSearch) {
+        params.search = debouncedSearch;
+      }
+      if (statusFilter && statusFilter !== "ALL") {
+        params.status = statusFilter;
+      }
+      if (priorityFilter && priorityFilter !== "ALL") {
+        params.priority = priorityFilter;
+      }
+
+      const res = await orderService.getOrdersPaginated(params);
+      if (res && Array.isArray(res.content)) {
+        setOrders(res.content.map(normalizeOrder));
+        setTotalPages(res.totalPages || 1);
+        setTotalElements(res.totalElements || 0);
+      } else if (Array.isArray(res)) {
+        setOrders(res.map(normalizeOrder));
+        setTotalPages(Math.ceil(res.length / itemsPerPage) || 1);
+        setTotalElements(res.length);
       } else {
         setOrders([]);
+        setTotalPages(1);
+        setTotalElements(0);
       }
     } catch (err) {
       console.error("Failed to fetch requested orders:", err);
@@ -140,112 +226,21 @@ function RequestedOrders() {
     } finally {
       setIsLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [
+    targetFacilityId,
+    currentPage,
+    itemsPerPage,
+    debouncedSearch,
+    statusFilter,
+    priorityFilter,
+  ]);
 
   useEffect(() => {
     fetchOrders();
   }, [fetchOrders]);
 
-  // Filter orders that reference the current active facility
-  const currentFacilityOrders = useMemo(() => {
-    if (!targetFacilityId) return [];
-    return orders.filter(
-      (o) =>
-        o.facilityId === targetFacilityId ||
-        o.targetFacility === currentFacilityName,
-    );
-  }, [orders, targetFacilityId, currentFacilityName]);
-
-  // Modals state
-  const [selectedOrder, setSelectedOrder] = useState(null);
-  const [modalMode, setModalMode] = useState(null); // 'view' | 'approve' | 'reject' | null
-  const [rejectReason, setRejectReason] = useState("");
-  const [rejectError, setRejectError] = useState("");
-
-  // KPI Metrics Calculation for Current Facility
-  const metrics = useMemo(() => {
-    const total = currentFacilityOrders.length;
-    const pending = currentFacilityOrders.filter(
-      (o) => o.status === "Pending" || o.status === "Pending Approval",
-    ).length;
-    const approved = currentFacilityOrders.filter(
-      (o) => o.status === "Approved",
-    ).length;
-    const partiallyReceived = currentFacilityOrders.filter(
-      (o) =>
-        o.status === "Partially_Received" ||
-        o.status === "Partially Received",
-    ).length;
-    const received = currentFacilityOrders.filter(
-      (o) => o.status === "Received",
-    ).length;
-    const rejected = currentFacilityOrders.filter(
-      (o) => o.status === "Rejected" || o.status === "Denied",
-    ).length;
-    return {
-      total,
-      pending,
-      approved,
-      partiallyReceived,
-      received,
-      rejected,
-    };
-  }, [currentFacilityOrders]);
-
-  // Filtering Logic
-  const filteredOrders = useMemo(() => {
-    return currentFacilityOrders.filter((order) => {
-      const q = searchQuery.toLowerCase().trim();
-      const matchesSearch =
-        !q ||
-        (order.orderNumber && order.orderNumber.toLowerCase().includes(q)) ||
-        (order.sku && order.sku.toLowerCase().includes(q)) ||
-        (order.brandName && order.brandName.toLowerCase().includes(q)) ||
-        (order.genericName && order.genericName.toLowerCase().includes(q)) ||
-        (order.supplierName && order.supplierName.toLowerCase().includes(q)) ||
-        (order.targetFacility &&
-          order.targetFacility.toLowerCase().includes(q)) ||
-        (order.items &&
-          order.items.some(
-            (item) =>
-              (item.brandName && item.brandName.toLowerCase().includes(q)) ||
-              (item.genericName &&
-                item.genericName.toLowerCase().includes(q)) ||
-              (item.skuName && item.skuName.toLowerCase().includes(q)),
-          ));
-
-      const isPart =
-        order.status === "Partially_Received" ||
-        order.status === "Partially Received";
-      const matchesStatus =
-        statusFilter === "ALL" ||
-        order.status === statusFilter ||
-        (statusFilter === "Partially Received" && isPart) ||
-        (statusFilter === "Received" && order.status === "Received") ||
-        (statusFilter === "Pending Approval" &&
-          (order.status === "Pending" ||
-            order.status === "Pending Approval")) ||
-        (statusFilter === "Approved" && order.status === "Approved") ||
-        (statusFilter === "Rejected" &&
-          (order.status === "Rejected" || order.status === "Denied"));
-
-      const matchesPriority =
-        priorityFilter === "ALL" || order.priority === priorityFilter;
-
-      return matchesSearch && matchesStatus && matchesPriority;
-    });
-  }, [currentFacilityOrders, searchQuery, statusFilter, priorityFilter]);
-
-  // Pagination Logic
-  const totalPages = Math.ceil(filteredOrders.length / itemsPerPage) || 1;
-  const paginatedOrders = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredOrders.slice(start, start + itemsPerPage);
-  }, [filteredOrders, currentPage, itemsPerPage]);
-
   const handleSearchChange = (e) => {
     setSearchQuery(e.target.value);
-    setCurrentPage(1);
   };
 
   const handleStatusChange = (e) => {
@@ -257,6 +252,12 @@ function RequestedOrders() {
     setPriorityFilter(e.target.value);
     setCurrentPage(1);
   };
+
+  // Modals state
+  const [selectedOrder, setSelectedOrder] = useState(null);
+  const [modalMode, setModalMode] = useState(null); // 'view' | 'approve' | 'reject' | null
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectError, setRejectError] = useState("");
 
   // Modal Openers
   const handleOpenViewModal = (order) => {
@@ -289,22 +290,8 @@ function RequestedOrders() {
     try {
       setIsActionLoading(true);
       await orderService.updateOrderStatus(selectedOrder.id, "Approved");
-      const today = new Date().toISOString().split("T")[0];
-
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === selectedOrder.id
-            ? {
-                ...o,
-                status: "Approved",
-                approvedBy: "Administrator",
-                approvalDate: today,
-                rejectionReason: null,
-              }
-            : o,
-        ),
-      );
       handleCloseModal();
+      await Promise.all([fetchOrders(), fetchSummary()]);
     } catch (err) {
       console.error("Failed to approve order:", err);
       alert(
@@ -332,23 +319,8 @@ function RequestedOrders() {
         "Denied",
         denialNotes,
       );
-      const today = new Date().toISOString().split("T")[0];
-
-      setOrders((prev) =>
-        prev.map((o) =>
-          o.id === selectedOrder.id
-            ? {
-                ...o,
-                status: "Rejected",
-                approvedBy: "Administrator",
-                approvalDate: today,
-                rejectionReason: denialNotes,
-                notes: "",
-              }
-            : o,
-        ),
-      );
       handleCloseModal();
+      await Promise.all([fetchOrders(), fetchSummary()]);
     } catch (err) {
       console.error("Failed to deny order:", err);
       setRejectError(
@@ -429,15 +401,18 @@ function RequestedOrders() {
         <div className="flex items-center gap-2 shrink-0">
           <button
             type="button"
-            onClick={fetchOrders}
-            disabled={isLoading}
+            onClick={() => {
+              fetchOrders();
+              fetchSummary();
+            }}
+            disabled={isLoading || isSummaryLoading}
             className="btn-secondary py-2 px-3 text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50"
             title="Refresh order requisitions from backend"
           >
             <RefreshCw
-              className={`w-3.5 h-3.5 ${isLoading ? "animate-spin text-blue-600" : ""}`}
+              className={`w-3.5 h-3.5 ${isLoading || isSummaryLoading ? "animate-spin text-blue-600" : ""}`}
             />
-            <span>{isLoading ? "Refreshing..." : "Refresh"}</span>
+            <span>{isLoading || isSummaryLoading ? "Refreshing..." : "Refresh"}</span>
           </button>
         </div>
       </div>
@@ -451,7 +426,10 @@ function RequestedOrders() {
           </div>
           <button
             type="button"
-            onClick={fetchOrders}
+            onClick={() => {
+              fetchOrders();
+              fetchSummary();
+            }}
             className="font-bold underline hover:text-red-950 cursor-pointer shrink-0"
           >
             Retry
@@ -462,7 +440,7 @@ function RequestedOrders() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-slide-up-1">
         {/* 1. Total Orders */}
         <Card className="p-5 border border-gray-200 shadow-xs hover:border-gray-300 transition-all bg-white">
-          {isLoading ? (
+          {isSummaryLoading ? (
             <div className="flex items-center justify-between">
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-3.5 w-32" />
@@ -493,7 +471,7 @@ function RequestedOrders() {
 
         {/* 2. Pending Approval */}
         <Card className="p-5 border border-amber-200/80 shadow-xs hover:border-amber-300 transition-all bg-linear-to-br from-white to-amber-50/20">
-          {isLoading ? (
+          {isSummaryLoading ? (
             <div className="flex items-center justify-between">
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-3.5 w-32 bg-amber-200/60" />
@@ -524,7 +502,7 @@ function RequestedOrders() {
 
         {/* 3. Approved Orders */}
         <Card className="p-5 border border-emerald-200/80 shadow-xs hover:border-emerald-300 transition-all bg-linear-to-br from-white to-emerald-50/20">
-          {isLoading ? (
+          {isSummaryLoading ? (
             <div className="flex items-center justify-between">
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-3.5 w-28 bg-emerald-200/60" />
@@ -555,7 +533,7 @@ function RequestedOrders() {
 
         {/* 4. Rejected Orders */}
         <Card className="p-5 border border-red-200/80 shadow-xs hover:border-red-300 transition-all bg-linear-to-br from-white to-red-50/20">
-          {isLoading ? (
+          {isSummaryLoading ? (
             <div className="flex items-center justify-between">
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-3.5 w-32 bg-red-200/60" />
@@ -607,7 +585,7 @@ function RequestedOrders() {
               options={[
                 {
                   value: "ALL",
-                  label: `All Statuses (${currentFacilityOrders.length})`,
+                  label: `All Statuses (${metrics.total})`,
                 },
                 {
                   value: "Pending Approval",
@@ -711,8 +689,8 @@ function RequestedOrders() {
                     </td>
                   </tr>
                 ))
-              ) : paginatedOrders.length > 0 ? (
-                paginatedOrders.map((order, index) => {
+              ) : orders.length > 0 ? (
+                orders.map((order, index) => {
                   const statusInfo = getStatusBadge(order.status);
                   const StatusIcon = statusInfo.icon;
 
@@ -879,12 +857,12 @@ function RequestedOrders() {
         </div>
 
         {/* Pagination Section */}
-        {filteredOrders.length > 0 && (
+        {totalElements > 0 && (
           <div className="p-4 border-t border-gray-100 bg-gray-50/40">
             <Pagination
               currentPage={currentPage}
               totalPages={totalPages}
-              totalItems={filteredOrders.length}
+              totalItems={totalElements}
               itemsPerPage={itemsPerPage}
               onPageChange={setCurrentPage}
             />
