@@ -29,6 +29,7 @@ import { Skeleton } from "../../components/common/skeleton";
 
 // Services & Hooks
 import inventoryTransactionService from "../../services/inventoryTransaction";
+import skuService from "../../services/sku";
 import useAuth from "../../hooks/useAuth";
 import useRole from "../../hooks/useRole";
 
@@ -92,7 +93,7 @@ function BinCard() {
     try {
       setLoadingSkus(true);
       setError(null);
-      const skus = await inventoryTransactionService.getFacilitySkus(facilityId);
+      const skus = await skuService.getDropdownSkus(facilityId);
       const skuList = Array.isArray(skus) ? skus : [];
       setFacilitySkus(skuList);
       if (!selectedSkuId && skuList.length > 0) {

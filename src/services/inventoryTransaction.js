@@ -74,7 +74,7 @@ const inventoryTransactionService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     const data = response.data;
     if (data && Array.isArray(data.entries)) {
@@ -92,22 +92,8 @@ const inventoryTransactionService = {
       facilityId,
       startDate,
       endDate,
-      config
+      config,
     );
-  },
-
-  /**
-   * Retrieves active SKUs in the facility for ledger dropdown selection.
-   */
-  getFacilitySkus: async (facilityId, config = {}) => {
-    const response = await axios.get(
-      inventoryTransactionApi.getFacilitySkus(facilityId),
-      {
-        ...config,
-        headers: getAuthHeaders(config),
-      }
-    );
-    return response.data;
   },
 
   /**
@@ -163,7 +149,9 @@ const inventoryTransactionService = {
     config = {},
   ) => {
     if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch transactions by SKU.");
+      throw new Error(
+        "Facility ID is strictly required to fetch transactions by SKU.",
+      );
     }
     const response = await axios.get(
       inventoryTransactionApi.getTransactionsBySku(
@@ -219,7 +207,9 @@ const inventoryTransactionService = {
     config = {},
   ) => {
     if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch adjustment logs.");
+      throw new Error(
+        "Facility ID is strictly required to fetch adjustment logs.",
+      );
     }
     const response = await axios.get(
       inventoryTransactionApi.getAdjustmentLogsByFacility(
@@ -259,7 +249,9 @@ const inventoryTransactionService = {
     config = {},
   ) => {
     if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch adjustment logs by SKU.");
+      throw new Error(
+        "Facility ID is strictly required to fetch adjustment logs by SKU.",
+      );
     }
     const response = await axios.get(
       inventoryTransactionApi.getAdjustmentLogsBySku(
@@ -291,7 +283,9 @@ const inventoryTransactionService = {
    */
   getTransactionSummary: async (facilityId, types = [], config = {}) => {
     if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch transaction summary.");
+      throw new Error(
+        "Facility ID is strictly required to fetch transaction summary.",
+      );
     }
     const response = await axios.get(
       inventoryTransactionApi.getTransactionSummary(facilityId, types),
@@ -308,7 +302,9 @@ const inventoryTransactionService = {
    */
   getAdjustmentSummary: async (facilityId, config = {}) => {
     if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch adjustment summary.");
+      throw new Error(
+        "Facility ID is strictly required to fetch adjustment summary.",
+      );
     }
     const response = await axios.get(
       inventoryTransactionApi.getAdjustmentSummary(facilityId),

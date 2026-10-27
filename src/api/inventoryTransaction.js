@@ -19,8 +19,6 @@ const inventoryTransactionApi = {
     return url;
   },
 
-  getFacilitySkus: (facilityId) => `${API_URL}/skus?facilityId=${facilityId}`,
-
   // Transaction list endpoints
   getTransactionsByFacility: (
     facilityId,
