@@ -11,6 +11,10 @@ export const validateFacilityForm = (
     name:
       isRequired(formData.name, "Facility name is required.") ||
       minLength(formData.name, 2, "Facility name must be at least 2 characters."),
+    facilityCode: isRequired(
+      formData.facilityCode,
+      "Facility code is required."
+    ),
     contactPerson: isRequired(
       formData.contactPerson,
       "Contact person is required."

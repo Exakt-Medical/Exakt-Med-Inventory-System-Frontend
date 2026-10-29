@@ -4,7 +4,7 @@ import { isRequired, minLength, isUnique, runValidation } from "./rules";
  * Validate Project Form (Add or Edit)
  */
 export const validateProjectForm = (
-  { name } = {},
+  { name, projectCode } = {},
   { projectList = [], excludeId = null, isEdit = false } = {}
 ) => {
   let nameError =
@@ -18,5 +18,20 @@ export const validateProjectForm = (
     nameError = isUnique(name, projectList, "name", excludeId, duplicateMsg);
   }
 
-  return runValidation({ name: nameError });
+  let codeError = isRequired(projectCode, "Project code is required.");
+
+  if (!codeError) {
+    const duplicateCodeMsg = isEdit
+      ? "Another project with this code already exists."
+      : "A project with this code already exists.";
+    codeError = isUnique(
+      projectCode,
+      projectList,
+      "projectCode",
+      excludeId,
+      duplicateCodeMsg
+    );
+  }
+
+  return runValidation({ name: nameError, projectCode: codeError });
 };
