@@ -102,13 +102,55 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState("");
   const [selectedType, setSelectedType] = useState("ALL");
   const [selectedReason, setSelectedReason] = useState("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
+  // Debounce search query (300ms) to prevent server hammering on keystrokes
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
   // Selected Log for Details Modal
   const [selectedLog, setSelectedLog] = useState(null);
+  const [serverTotalPages, setServerTotalPages] = useState(1);
+  const [serverTotalItems, setServerTotalItems] = useState(0);
+
+  // Facility-wide KPI Summary State
+  const [summaryMetrics, setSummaryMetrics] = useState({
+    totalLogs: 0,
+    netDelta: 0,
+    additionsUnits: 0,
+    additionsCount: 0,
+    deductionsUnits: 0,
+    deductionsCount: 0,
+  });
+  const [isSummaryLoading, setIsSummaryLoading] = useState(true);
+
+  const fetchSummary = useCallback(async () => {
+    if (!targetFacilityId) return;
+    try {
+      setIsSummaryLoading(true);
+      const summary =
+        await inventoryTransactionService.getAdjustmentSummary(targetFacilityId);
+      if (summary) {
+        setSummaryMetrics(summary);
+      }
+    } catch (err) {
+      console.error("Failed to load adjustment summary KPIs:", err);
+    } finally {
+      setIsSummaryLoading(false);
+    }
+  }, [targetFacilityId]);
+
+  useEffect(() => {
+    fetchSummary();
+  }, [fetchSummary]);
 
   // Fetch adjustment logs from backend API
   const fetchLogs = useCallback(async () => {
@@ -120,11 +162,24 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
       setIsLoading(true);
       setError(null);
       const data =
-        await inventoryTransactionService.getAdjustmentLogsByFacility(targetFacilityId);
-      if (Array.isArray(data)) {
+        await inventoryTransactionService.getAdjustmentLogsByFacility(
+          targetFacilityId,
+          currentPage - 1,
+          itemsPerPage,
+          debouncedSearchQuery,
+        );
+      if (data && Array.isArray(data.content)) {
+        setLogs(data.content);
+        setServerTotalPages(data.totalPages || 1);
+        setServerTotalItems(data.totalElements || 0);
+      } else if (Array.isArray(data)) {
         setLogs(data);
+        setServerTotalPages(Math.ceil(data.length / itemsPerPage) || 1);
+        setServerTotalItems(data.length);
       } else {
         setLogs([]);
+        setServerTotalPages(1);
+        setServerTotalItems(0);
       }
     } catch (err) {
       console.error("Failed to fetch stock adjustment logs:", err);
@@ -136,11 +191,17 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     } finally {
       setIsLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [targetFacilityId, currentPage, itemsPerPage, debouncedSearchQuery]);
 
   useEffect(() => {
     fetchLogs();
   }, [fetchLogs]);
+
+  // Combined Refresh
+  const handleRefreshAll = () => {
+    fetchLogs();
+    fetchSummary();
+  };
 
   // Extract distinct reasons for filter dropdown
   const distinctReasons = useMemo(() => {
@@ -196,61 +257,22 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     });
   }, [logs, initialSkuId, selectedType, selectedReason, searchQuery]);
 
-  // KPI Metrics Calculations
+  // KPI Metrics based on dedicated summary API
   const metrics = useMemo(() => {
-    let additionsUnits = 0;
-    let deductionsUnits = 0;
-    let netDelta = 0;
-    let additionsCount = 0;
-    let deductionsCount = 0;
-    let reconciliationCount = 0;
-
-    filteredLogs.forEach((log) => {
-      const delta = Number(log.deltaUnits) || 0;
-      netDelta += delta;
-      const normType = normalizeAdjustmentType(log.adjustmentType);
-
-      if (normType === "ADD") {
-        additionsUnits += Math.abs(delta);
-        additionsCount += 1;
-      } else if (normType === "SUBTRACT") {
-        deductionsUnits += Math.abs(delta);
-        deductionsCount += 1;
-      } else if (normType === "SET") {
-        reconciliationCount += 1;
-        if (delta < 0) {
-          deductionsUnits += Math.abs(delta);
-        } else if (delta > 0) {
-          additionsUnits += delta;
-        }
-      } else {
-        if (delta < 0) {
-          deductionsUnits += Math.abs(delta);
-          deductionsCount += 1;
-        } else if (delta > 0) {
-          additionsUnits += delta;
-          additionsCount += 1;
-        }
-      }
-    });
-
     return {
-      totalLogs: filteredLogs.length,
-      netDelta,
-      additionsUnits,
-      additionsCount,
-      deductionsUnits,
-      deductionsCount,
-      reconciliationCount,
+      totalLogs: summaryMetrics.totalLogs || serverTotalItems || filteredLogs.length,
+      netDelta: summaryMetrics.netDelta,
+      additionsUnits: summaryMetrics.additionsUnits,
+      additionsCount: summaryMetrics.additionsCount,
+      deductionsUnits: summaryMetrics.deductionsUnits,
+      deductionsCount: summaryMetrics.deductionsCount,
+      reconciliationCount: 0,
     };
-  }, [filteredLogs]);
+  }, [summaryMetrics, serverTotalItems, filteredLogs.length]);
 
   // Pagination
-  const totalPages = Math.ceil(filteredLogs.length / itemsPerPage) || 1;
-  const paginatedLogs = useMemo(() => {
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    return filteredLogs.slice(startIndex, startIndex + itemsPerPage);
-  }, [filteredLogs, currentPage, itemsPerPage]);
+  const totalPages = serverTotalPages || Math.ceil(filteredLogs.length / itemsPerPage) || 1;
+  const paginatedLogs = filteredLogs;
 
   return (
     <div className="w-full max-w-full space-y-6">
@@ -285,13 +307,13 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
         <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
           <button
             type="button"
-            onClick={fetchLogs}
-            disabled={isLoading}
+            onClick={handleRefreshAll}
+            disabled={isLoading || isSummaryLoading}
             className="btn-secondary shadow-sm flex items-center gap-1.5 border-gray-200 text-gray-700 hover:bg-gray-50"
             title="Refresh logs from server"
           >
             <RefreshCw
-              className={`w-4 h-4 text-gray-500 ${isLoading ? "animate-spin" : ""}`}
+              className={`w-4 h-4 text-gray-500 ${isLoading || isSummaryLoading ? "animate-spin" : ""}`}
             />
             <span>Refresh</span>
           </button>
@@ -748,7 +770,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setCurrentPage}
-            totalItems={filteredLogs.length}
+            totalItems={serverTotalItems || filteredLogs.length}
             itemsPerPage={itemsPerPage}
           />
         </div>

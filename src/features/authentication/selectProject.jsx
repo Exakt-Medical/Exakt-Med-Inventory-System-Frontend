@@ -61,6 +61,7 @@ function SelectProject() {
   // Modal & Form state for creating a new project
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newProjectName, setNewProjectName] = useState("");
+  const [newProjectCode, setNewProjectCode] = useState("");
   const {
     errors: addErrors,
     setErrors: setAddErrors,
@@ -73,6 +74,7 @@ function SelectProject() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
   const [editProjectName, setEditProjectName] = useState("");
+  const [editProjectCode, setEditProjectCode] = useState("");
   const {
     errors: editErrors,
     setErrors: setEditErrors,
@@ -141,6 +143,7 @@ function SelectProject() {
   // --- Create Project Handlers ---
   const handleOpenAddModal = () => {
     setNewProjectName("");
+    setNewProjectCode("");
     clearAddErrors();
     setIsAddModalOpen(true);
   };
@@ -150,8 +153,9 @@ function SelectProject() {
     if (!isSuperAdmin) return;
 
     const trimmed = newProjectName.trim();
+    const trimmedCode = newProjectCode.trim();
     const { isValid, errors } = validateProjectForm(
-      { name: trimmed },
+      { name: trimmed, projectCode: trimmedCode },
       { projectList, isEdit: false }
     );
     if (!isValid) {
@@ -164,6 +168,7 @@ function SelectProject() {
       clearAddErrors();
       const createdProject = await projectService.createProject({
         name: trimmed,
+        projectCode: trimmedCode,
       });
 
       setProjectList((prev) => [
@@ -173,6 +178,7 @@ function SelectProject() {
 
       setIsAddModalOpen(false);
       setNewProjectName("");
+      setNewProjectCode("");
       clearAddErrors();
     } catch (err) {
       handleAddApiError(err, "Failed to create project. Please try again.");
@@ -186,6 +192,7 @@ function SelectProject() {
     if (!isSuperAdmin) return;
     setEditingProject(project);
     setEditProjectName(project.name || "");
+    setEditProjectCode(project.projectCode || "");
     clearEditErrors();
     setIsEditModalOpen(true);
   };
@@ -194,6 +201,7 @@ function SelectProject() {
     setIsEditModalOpen(false);
     setEditingProject(null);
     setEditProjectName("");
+    setEditProjectCode("");
     clearEditErrors();
   };
 
@@ -203,8 +211,9 @@ function SelectProject() {
     if (!editingProject) return;
 
     const trimmed = editProjectName.trim();
+    const trimmedCode = editProjectCode.trim();
     const { isValid, errors } = validateProjectForm(
-      { name: trimmed },
+      { name: trimmed, projectCode: trimmedCode },
       { projectList, excludeId: editingProject.id, isEdit: true }
     );
     if (!isValid) {
@@ -219,6 +228,7 @@ function SelectProject() {
         editingProject.id,
         {
           name: trimmed,
+          projectCode: trimmedCode,
         },
       );
 
@@ -507,10 +517,10 @@ function SelectProject() {
             </div>
           </div>
 
-          {(addErrors.name || addErrors.general) && (
+          {(addErrors.name || addErrors.projectCode || addErrors.general) && (
             <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-              <span>{addErrors.name || addErrors.general}</span>
+              <span>{addErrors.name || addErrors.projectCode || addErrors.general}</span>
             </div>
           )}
 
@@ -533,6 +543,28 @@ function SelectProject() {
               placeholder="e.g. Pasig Regional Medical Network"
               className="input text-xs"
               autoFocus
+              disabled={isCreating}
+            />
+          </div>
+
+          {/* Project Code */}
+          <div>
+            <label
+              htmlFor="projectCode"
+              className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5"
+            >
+              Project Code / Group Tagging <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="projectCode"
+              type="text"
+              value={newProjectCode}
+              onChange={(e) => {
+                setNewProjectCode(e.target.value);
+                clearAddErrors();
+              }}
+              placeholder="e.g. PRJ-001 or PANGASINAN"
+              className="input text-xs font-mono"
               disabled={isCreating}
             />
           </div>
@@ -583,10 +615,10 @@ function SelectProject() {
             </div>
           </div>
 
-          {(editErrors.name || editErrors.general) && (
+          {(editErrors.name || editErrors.projectCode || editErrors.general) && (
             <div className="flex items-center gap-2 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl">
               <AlertCircle className="w-4 h-4 shrink-0 text-rose-500" />
-              <span>{editErrors.name || editErrors.general}</span>
+              <span>{editErrors.name || editErrors.projectCode || editErrors.general}</span>
             </div>
           )}
 
@@ -609,6 +641,28 @@ function SelectProject() {
               placeholder="e.g. Pasig Regional Medical Network"
               className="input text-xs"
               autoFocus
+              disabled={isUpdating}
+            />
+          </div>
+
+          {/* Project Code */}
+          <div>
+            <label
+              htmlFor="editProjectCode"
+              className="block text-xs font-semibold uppercase tracking-wider text-gray-700 mb-1.5"
+            >
+              Project Code / Group Tagging <span className="text-red-500">*</span>
+            </label>
+            <input
+              id="editProjectCode"
+              type="text"
+              value={editProjectCode}
+              onChange={(e) => {
+                setEditProjectCode(e.target.value);
+                clearEditErrors();
+              }}
+              placeholder="e.g. PRJ-001 or PANGASINAN"
+              className="input text-xs font-mono"
               disabled={isUpdating}
             />
           </div>

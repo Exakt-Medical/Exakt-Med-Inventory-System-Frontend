@@ -13,7 +13,7 @@ const skuApi = {
     sortBy = "brandName",
     sortDir = "ASC",
   }) => {
-    let url = `${API_URL}/paginated?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
     const filterValue = status || stockFilter;
     if (filterValue && filterValue !== "ALL") url += `&status=${encodeURIComponent(filterValue)}`;

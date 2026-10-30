@@ -18,28 +18,37 @@ const orderService = {
     return response.data;
   },
 
-  getAllOrders: async (facilityId, statusOrConfig = null, config = {}) => {
-    if (!facilityId) {
+  getOrdersPaginated: async (params, config = {}) => {
+    if (!params?.facilityId) {
       throw new Error("Facility ID is required to fetch orders.");
     }
-    let status = null;
-    let actualConfig = config;
+    const response = await axios.get(orderApi.getOrders(params), {
+      ...config,
+      headers: getAuthHeaders(config),
+    });
+    return response.data;
+  },
 
-    if (Array.isArray(statusOrConfig)) {
-      status = statusOrConfig;
-    } else if (statusOrConfig && typeof statusOrConfig === "object") {
-      actualConfig = statusOrConfig;
-    } else if (typeof statusOrConfig === "string") {
-      status = statusOrConfig;
+
+  getOrderSummary: async (facilityId, config = {}) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is required to fetch order summary.");
     }
+    const response = await axios.get(orderApi.getOrderSummary(facilityId), {
+      ...config,
+      headers: getAuthHeaders(config),
+    });
+    return response.data;
+  },
 
-    const response = await axios.get(
-      orderApi.getAllOrders(facilityId, status),
-      {
-        ...actualConfig,
-        headers: getAuthHeaders(actualConfig),
-      },
-    );
+  getReceivableOrders: async (facilityId, config = {}) => {
+    if (!facilityId) {
+      throw new Error("Facility ID is required to fetch receivable orders.");
+    }
+    const response = await axios.get(orderApi.getReceivableOrders(facilityId), {
+      ...config,
+      headers: getAuthHeaders(config),
+    });
     return response.data;
   },
 

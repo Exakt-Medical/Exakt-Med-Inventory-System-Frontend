@@ -16,7 +16,7 @@ const batchApi = {
     sortBy = "receivedAt",
     sortDir = "DESC",
   }) => {
-    let url = `${API_URL}/paginated?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
     if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
     if (sku && sku !== "ALL") url += `&sku=${encodeURIComponent(sku)}`;

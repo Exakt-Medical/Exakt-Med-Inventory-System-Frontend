@@ -3,17 +3,18 @@ const API_URL = `${BASE_URL}/api/orders`;
 
 const orderApi = {
   createOrder: `${API_URL}`,
-  getAllOrders: (facilityId, status) => {
-    let url = `${API_URL}?facilityId=${facilityId}`;
-    if (Array.isArray(status)) {
-      status.forEach((s) => {
-        if (s) url += `&status=${encodeURIComponent(s)}`;
-      });
-    } else if (status) {
-      url += `&status=${encodeURIComponent(status)}`;
-    }
-    return url;
+  getOrders: (params = {}) => {
+    const searchParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== "") {
+        searchParams.append(key, val);
+      }
+    });
+    return `${API_URL}?${searchParams.toString()}`;
   },
+
+  getOrderSummary: (facilityId) => `${API_URL}/summary?facilityId=${facilityId}`,
+  getReceivableOrders: (facilityId) => `${API_URL}/receivable?facilityId=${facilityId}`,
   getOrderById: (id) => `${API_URL}/${id}`,
   updateOrderStatus: (id) => `${API_URL}/${id}/status`,
 };
