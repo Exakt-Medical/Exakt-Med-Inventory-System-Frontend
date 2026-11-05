@@ -15,6 +15,7 @@ import {
   Sliders,
   ShieldCheck,
   Building2,
+  Store,
   RefreshCw,
   Loader2,
 } from "lucide-react";
@@ -88,7 +89,9 @@ const CustomBarTooltip = ({ active, payload, label }) => {
 };
 
 function PharmacistDashboard() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
+  const activePharmacyName =
+    pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
 
   const [metrics, setMetrics] = useState({
     totalSkus: 0,
@@ -110,7 +113,7 @@ function PharmacistDashboard() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await dashboardService.getPharmacistDashboard(facility?.id);
+      const data = await dashboardService.getPharmacistDashboard(pharmacy?.id);
       if (data) {
         setMetrics(
           data.metrics || {
@@ -122,7 +125,7 @@ function PharmacistDashboard() {
             totalNearExpiry: 0,
             totalBatches: 0,
             totalQuarantined: 0,
-          }
+          },
         );
         setSkuStockDistribution(data.skuStockDistribution || []);
         setSkuHealthBarData(data.skuHealthBarData || []);
@@ -130,11 +133,15 @@ function PharmacistDashboard() {
       }
     } catch (err) {
       console.error("Failed to fetch pharmacist dashboard data:", err);
-      setError(err?.response?.data?.message || err?.message || "Failed to load dashboard data");
+      setError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load dashboard data",
+      );
     } finally {
       setIsLoading(false);
     }
-  }, [facility?.id]);
+  }, [pharmacy?.id]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -145,14 +152,14 @@ function PharmacistDashboard() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-slide-up">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               Pharmacist Manager Overview
             </h1>
-            {facility?.name && (
+            {activePharmacyName && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <Building2 className="w-3.5 h-3.5" />
-                {facility.name}
+                <Store className="w-3.5 h-3.5" />
+                {activePharmacyName}
               </span>
             )}
           </div>
@@ -509,7 +516,7 @@ function PharmacistDashboard() {
               ) : (
                 <div className="h-full w-full flex flex-col items-center justify-center text-gray-400 text-xs">
                   <Boxes className="w-8 h-8 text-gray-300 mb-2" />
-                  <p>No inventory records registered for this facility yet.</p>
+                  <p>No inventory records registered for this pharmacy yet.</p>
                 </div>
               )}
             </div>
@@ -566,7 +573,10 @@ function PharmacistDashboard() {
               {isLoading ? (
                 <div className="h-full w-full flex items-end justify-between gap-4 px-6 pb-6 pt-4">
                   {Array.from({ length: 6 }).map((_, idx) => (
-                    <div key={`bar-skel-${idx}`} className="flex-1 flex items-end gap-1.5 h-full">
+                    <div
+                      key={`bar-skel-${idx}`}
+                      className="flex-1 flex items-end gap-1.5 h-full"
+                    >
                       <Skeleton className="w-full h-3/5 rounded-t" />
                       <Skeleton className="w-full h-4/5 rounded-t" />
                       <Skeleton className="w-full h-2/5 rounded-t" />
@@ -628,7 +638,12 @@ function PharmacistDashboard() {
           <div className="p-2.5 bg-gray-50 rounded-lg border border-gray-100 flex items-center justify-between text-xs text-gray-500 mt-2">
             <span>
               <span className="font-bold text-gray-700">
-                {skuHealthBarData.filter((c) => c.lowStock > 0 || c.outOfStock > 0).length} categories
+                {
+                  skuHealthBarData.filter(
+                    (c) => c.lowStock > 0 || c.outOfStock > 0,
+                  ).length
+                }{" "}
+                categories
               </span>{" "}
               require threshold review or reorder requisition.
             </span>
@@ -725,7 +740,8 @@ function PharmacistDashboard() {
                   All Systems Operational
                 </p>
                 <p className="text-emerald-700 mt-0.5">
-                  No expired batches, quarantined items, or critical stock threshold violations found in this facility.
+                  No expired batches, quarantined items, or critical stock
+                  threshold violations found in this pharmacy.
                 </p>
               </div>
             </div>

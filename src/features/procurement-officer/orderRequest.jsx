@@ -114,8 +114,10 @@ const mapDtoToSku = (dto) => {
     minimumLevel: Number(dto.minimumLevel ?? 0),
     reorderLevel: Number(dto.reorderLevel ?? 0),
     maximumLevel: Number(dto.maximumLevel ?? 0),
-    facilityId: dto.facilityId,
-    facility: dto.facilityName || "",
+    pharmacyId: dto.pharmacyId,
+    pharmacy: dto.pharmacyName || "",
+    facilityId: dto.pharmacyId ?? dto.facilityId,
+    facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
     createdAt: dto.createdAt
       ? String(dto.createdAt).split("T")[0]
@@ -125,16 +127,20 @@ const mapDtoToSku = (dto) => {
 };
 
 function OrderRequest() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
 
-  // Automatically detect current active facility
+  // Automatically detect current active pharmacy
   const currentFacilityName = useMemo(() => {
-    return facility?.name || "";
-  }, [facility]);
+    return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [pharmacy, facility]);
 
   const targetFacilityId = useMemo(() => {
-    return facility?.id || null;
-  }, [facility]);
+    return pharmacy?.id || null;
+  }, [pharmacy]);
+
+  const supplierFacilityId = useMemo(() => {
+    return facility?.id || pharmacy?.facilityId || null;
+  }, [facility, pharmacy]);
 
   const [skuList, setSkuList] = useState([]);
   const [isLoadingSkus, setIsLoadingSkus] = useState(true);
@@ -177,7 +183,7 @@ function OrderRequest() {
         setIsLoadingSkus(false);
       }
     },
-    [facility?.id, currentFacilityName],
+    [targetFacilityId, currentFacilityName],
   );
 
   const initialSkuFetchDone = useRef(false);
@@ -199,13 +205,13 @@ function OrderRequest() {
 
   // Fetch suppliers from backend API
   const fetchSuppliers = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!supplierFacilityId) {
       setSupplierList([]);
       return;
     }
     try {
       setIsLoadingSuppliers(true);
-      const data = await supplierService.getAllSuppliers(targetFacilityId);
+      const data = await supplierService.getAllSuppliers(supplierFacilityId);
       if (Array.isArray(data)) {
         setSupplierList(data);
       }
@@ -214,7 +220,7 @@ function OrderRequest() {
     } finally {
       setIsLoadingSuppliers(false);
     }
-  }, [targetFacilityId]);
+  }, [supplierFacilityId]);
 
   useEffect(() => {
     fetchSuppliers();
@@ -279,7 +285,7 @@ function OrderRequest() {
     } finally {
       setIsLoadingRestockRequests(false);
     }
-  }, [facility?.id, currentFacilityName]);
+  }, [targetFacilityId, currentFacilityName]);
 
   useEffect(() => {
     fetchRestockRequests();
@@ -828,18 +834,18 @@ function OrderRequest() {
       (s) => s.id === Number(orderForm.supplierId),
     );
 
-    const targetFacilityIdToSave = facility?.id || targetFacilityId;
+    const targetFacilityIdToSave = pharmacy?.id || targetFacilityId;
 
     if (!targetFacilityIdToSave) {
       setFormErrors({
         supplierId:
-          "Operating facility could not be determined. Please re-select your facility.",
+          "Operating pharmacy could not be determined. Please re-select your pharmacy.",
       });
       return;
     }
 
     const orderPayload = {
-      facilityId: Number(targetFacilityIdToSave),
+      pharmacyId: Number(targetFacilityIdToSave),
       supplierId: Number(orderForm.supplierId),
       priority: orderForm.priority || "Normal",
       totalPrice: Math.round(computedTotalCost),

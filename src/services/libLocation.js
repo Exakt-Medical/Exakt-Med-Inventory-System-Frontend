@@ -11,10 +11,15 @@ const getAuthHeaders = (config = {}) => {
 
 const libLocationService = {
   getAllLocations: async (params = {}, config = {}) => {
-    const response = await axios.get(libLocationApi.getAllLocations(params), {
-      ...config,
-      headers: getAuthHeaders(config),
-    });
+    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    if (!pharmacyId) return [];
+    const response = await axios.get(
+      libLocationApi.getAllLocations({ ...params, pharmacyId }),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
     return response.data;
   },
 
@@ -33,7 +38,7 @@ const libLocationService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
@@ -45,7 +50,7 @@ const libLocationService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
@@ -58,13 +63,14 @@ const libLocationService = {
     return response.data;
   },
 
-  suggestCode: async (storageType, facilityId, config = {}) => {
+  suggestCode: async (storageType, pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
     const response = await axios.get(
-      libLocationApi.suggestCode(storageType, facilityId),
+      libLocationApi.suggestCode(storageType, pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },

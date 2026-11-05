@@ -328,8 +328,10 @@ const mapDtoToSku = (dto) => {
     minimumLevel: Number(dto.minimumLevel ?? 0),
     reorderLevel: Number(dto.reorderLevel ?? 0),
     maximumLevel: Number(dto.maximumLevel ?? 0),
-    facilityId: dto.facilityId,
-    facility: dto.facilityName || "",
+    pharmacyId: dto.pharmacyId,
+    pharmacy: dto.pharmacyName || "",
+    facilityId: dto.pharmacyId ?? dto.facilityId,
+    facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
     pendingUnits: Number(dto.pendingUnits || 0),
     toReceiveUnits: Number(dto.toReceiveUnits || 0),
@@ -348,16 +350,16 @@ const mapDtoToSku = (dto) => {
 };
 
 function SkuManagement() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
 
-  // Automatically detect current active facility
+  // Automatically detect current active pharmacy
   const currentFacilityName = useMemo(() => {
-    return facility?.name || "";
-  }, [facility]);
+    return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [pharmacy, facility]);
 
   const targetFacilityId = useMemo(() => {
-    return facility?.id || null;
-  }, [facility]);
+    return pharmacy?.id || null;
+  }, [pharmacy]);
 
   const [skuList, setSkuList] = useState([]);
   const [isLoadingSkus, setIsLoadingSkus] = useState(true);
@@ -488,7 +490,7 @@ function SkuManagement() {
         }
 
         const data = await skuService.getSkusPaginated({
-          facilityId: targetFacilityId,
+          pharmacyId: targetFacilityId,
           search: query ? query.trim() : "",
           status: filter || "ALL",
           page: Math.max(0, pageToFetch - 1),
@@ -882,19 +884,19 @@ function SkuManagement() {
     try {
       setIsRestockSubmitting(true);
       const targetFacilityIdToUse =
-        facility?.id || selectedSku?.facilityId || targetFacilityId;
+        pharmacy?.id || selectedSku?.pharmacyId || selectedSku?.facilityId || targetFacilityId;
 
       if (!targetFacilityIdToUse) {
         setFormErrors({
           skuId:
-            "Active facility could not be determined. Please re-select your operating facility.",
+            "Active pharmacy could not be determined. Please re-select your operating pharmacy.",
         });
         return;
       }
 
       const payload = {
         skuId: Number(restockFormData.skuId),
-        facilityId: Number(targetFacilityIdToUse),
+        pharmacyId: Number(targetFacilityIdToUse),
         requestedUnits: units,
         reason: restockFormData.reason ? restockFormData.reason.trim() : null,
       };
@@ -906,7 +908,7 @@ function SkuManagement() {
         brandName: result?.brandName || selectedSku?.brandName,
         genericName: result?.genericName || selectedSku?.genericName,
         requestedUnits: result?.requestedUnits || units,
-        facilityName: result?.facilityName || currentFacilityName,
+        facilityName: result?.pharmacyName || result?.facilityName || currentFacilityName,
       });
       setIsRestockSuccessModalOpen(true);
       handleCloseModal();
@@ -989,11 +991,11 @@ function SkuManagement() {
     }
 
     const targetFacilityIdToSave =
-      facility?.id || selectedSku?.facilityId || targetFacilityId;
+      pharmacy?.id || selectedSku?.pharmacyId || selectedSku?.facilityId || targetFacilityId;
 
     if (!targetFacilityIdToSave) {
       setFormErrors({
-        sku: "Active operating facility could not be determined. Please ensure you are logged into a valid facility.",
+        sku: "Active operating pharmacy could not be determined. Please ensure you are logged into a valid pharmacy.",
       });
       return;
     }
@@ -1002,7 +1004,7 @@ function SkuManagement() {
     try {
       if (modalMode === "add") {
         const payload = {
-          facilityId: Number(targetFacilityIdToSave),
+          pharmacyId: Number(targetFacilityIdToSave),
           medicineId: Number(formData.medicineId),
           name: formData.sku ? formData.sku.trim().toUpperCase() : undefined,
           brandName: formData.brandName.trim().toUpperCase(),
@@ -1035,7 +1037,7 @@ function SkuManagement() {
         await fetchSummary();
         return;
       } else if (modalMode === "edit" && selectedSku) {
-        const editFacilityId = selectedSku.facilityId || targetFacilityIdToSave;
+        const editFacilityId = selectedSku.pharmacyId || selectedSku.facilityId || targetFacilityIdToSave;
 
         const editMedicineId = formData.medicineId || selectedSku.medicineId;
         if (!editMedicineId) {
@@ -1046,7 +1048,7 @@ function SkuManagement() {
         }
 
         const payload = {
-          facilityId: Number(editFacilityId),
+          pharmacyId: Number(editFacilityId),
           medicineId: Number(editMedicineId),
           brandName: formData.brandName.trim().toUpperCase(),
           packagingUnitCode: formData.packagingUnitCode || undefined,

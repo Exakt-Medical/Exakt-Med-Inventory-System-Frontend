@@ -6,7 +6,7 @@ const batchApi = {
   receiveBatchesBulk: `${API_URL}/bulk`,
   getBatchById: (id) => `${API_URL}/${id}`,
   getBatchesPaginated: ({
-    facilityId,
+    pharmacyId,
     search,
     status,
     sku,
@@ -16,22 +16,22 @@ const batchApi = {
     sortBy = "receivedAt",
     sortDir = "DESC",
   }) => {
-    let url = `${API_URL}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
     if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
     if (sku && sku !== "ALL") url += `&sku=${encodeURIComponent(sku)}`;
     if (expiryFilter && expiryFilter !== "ALL") url += `&expiryFilter=${encodeURIComponent(expiryFilter)}`;
     return url;
   },
-  getBatchSummary: (facilityId) => `${API_URL}/summary?facilityId=${facilityId}`,
-  getDistinctBatchSkus: (facilityId) => `${API_URL}/skus?facilityId=${facilityId}`,
+  getBatchSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
+  getDistinctBatchSkus: (pharmacyId) => `${API_URL}/skus?pharmacyId=${pharmacyId}`,
   updateBatchStatus: (id) => `${API_URL}/${id}/status`,
   releaseBatch: (id) => `${API_URL}/${id}/release`,
-  getBatchesBySku: (skuId, facilityId) => {
-    return `${API_URL}/sku/${skuId}?facilityId=${facilityId}`;
+  getBatchesBySku: (skuId, pharmacyId) => {
+    return `${API_URL}/sku/${skuId}?pharmacyId=${pharmacyId}`;
   },
-  processExpiredBatches: (facilityId, skuId) => {
-    return `${API_URL}/process-expired?facilityId=${facilityId}&skuId=${skuId}`;
+  processExpiredBatches: (pharmacyId, skuId) => {
+    return `${API_URL}/process-expired?pharmacyId=${pharmacyId}&skuId=${skuId}`;
   },
   updateBatchLocation: (id, locationId) => {
     let url = `${API_URL}/${id}/location`;

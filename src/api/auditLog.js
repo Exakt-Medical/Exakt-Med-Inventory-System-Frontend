@@ -3,7 +3,7 @@ const API_URL = `${BASE_URL}/api/audit-logs`;
 
 const auditLogApi = {
   getAuditLogs: (
-    facilityId,
+    pharmacyId,
     module = "",
     severity = "",
     search = "",
@@ -13,7 +13,7 @@ const auditLogApi = {
     sortDir = "DESC",
   ) => {
     const params = new URLSearchParams();
-    params.append("facilityId", facilityId);
+    params.append("pharmacyId", pharmacyId);
     if (module && module !== "All Modules") params.append("module", module);
     if (severity && severity !== "All Severities") params.append("severity", severity);
     if (search && search.trim()) params.append("search", search.trim());
@@ -23,7 +23,7 @@ const auditLogApi = {
     params.append("sortDir", sortDir);
     return `${API_URL}?${params.toString()}`;
   },
-  getAuditLogSummary: (facilityId) => `${API_URL}/summary?facilityId=${facilityId}`,
+  getAuditLogSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
 };
 
 export default auditLogApi;

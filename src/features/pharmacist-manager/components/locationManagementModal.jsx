@@ -66,10 +66,12 @@ export const getStorageTypeBadge = (type) => {
 export default function LocationManagementModal({
   isOpen,
   onClose,
+  pharmacyId,
   facilityId,
   onLocationCreated,
   initialView = "list", // 'list' or 'create'
 }) {
+  const targetPharmacyId = pharmacyId ?? facilityId;
   const [activeTab, setActiveTab] = useState(initialView);
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -90,11 +92,13 @@ export default function LocationManagementModal({
   const [successMsg, setSuccessMsg] = useState("");
 
   const fetchLocations = useCallback(async () => {
-    if (!facilityId) return;
+    if (!targetPharmacyId) return;
     try {
       setIsLoading(true);
       setErrorMsg("");
-      const data = await libLocationService.getAllLocations({ facilityId });
+      const data = await libLocationService.getAllLocations({
+        pharmacyId: targetPharmacyId,
+      });
       setLocations(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load locations:", err);
@@ -102,7 +106,7 @@ export default function LocationManagementModal({
     } finally {
       setIsLoading(false);
     }
-  }, [facilityId]);
+  }, [targetPharmacyId]);
 
   useEffect(() => {
     if (isOpen) {
@@ -130,7 +134,7 @@ export default function LocationManagementModal({
       setErrorMsg("");
       const suggested = await libLocationService.suggestCode(
         formData.storageType,
-        facilityId,
+        targetPharmacyId,
       );
       if (suggested) {
         setFormData((prev) => ({ ...prev, code: suggested }));
@@ -166,7 +170,7 @@ export default function LocationManagementModal({
         code: formData.code?.trim() || null,
         storageType: formData.storageType,
         description: formData.description?.trim() || null,
-        facilityId: facilityId,
+        pharmacyId: targetPharmacyId,
         isActive: formData.isActive,
       };
 
@@ -187,7 +191,6 @@ export default function LocationManagementModal({
 
       await fetchLocations();
       resetForm();
-      // If user came here via quick-add, auto-close after brief delay or switch back to list
       if (initialView === "create" && onLocationCreated) {
         setTimeout(() => {
           onClose();
@@ -214,7 +217,7 @@ export default function LocationManagementModal({
         code: loc.code,
         storageType: loc.storageType,
         description: loc.description,
-        facilityId: facilityId,
+        pharmacyId: targetPharmacyId,
         isActive: !loc.isActive,
       });
       setLocations((prev) => prev.map((l) => (l.id === loc.id ? updated : l)));
@@ -562,7 +565,9 @@ export default function LocationManagementModal({
                 disabled={isSubmitting}
                 className="btn-primary text-xs"
               >
-                {isSubmitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                {isSubmitting && (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                )}
                 <span>
                   {editingLocation ? "Save Changes" : "Create Location"}
                 </span>

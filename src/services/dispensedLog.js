@@ -10,9 +10,10 @@ const getAuthHeaders = (config = {}) => {
 };
 
 const dispensedLogService = {
-  getAll: async (facilityId = null, status = null, config = {}) => {
+  getAll: async (pharmacyId = null, status = null, config = {}) => {
+    if (!pharmacyId) return [];
     const response = await axios.get(
-      dispensedLogApi.getAll(facilityId, status),
+      dispensedLogApi.getAll(pharmacyId, status),
       {
         ...config,
         headers: getAuthHeaders(config),

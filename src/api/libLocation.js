@@ -5,7 +5,8 @@ const libLocationApi = {
   createLocation: `${API_URL}`,
   getAllLocations: (params = {}) => {
     const query = new URLSearchParams();
-    if (params.facilityId) query.append("facilityId", params.facilityId);
+    const pharmacyId = params.pharmacyId ?? params.facilityId;
+    if (pharmacyId) query.append("pharmacyId", pharmacyId);
     if (params.activeOnly !== undefined && params.activeOnly !== null) {
       query.append("activeOnly", params.activeOnly);
     }
@@ -16,10 +17,10 @@ const libLocationApi = {
   getLocationById: (id) => `${API_URL}/${id}`,
   updateLocation: (id) => `${API_URL}/${id}`,
   deleteLocation: (id) => `${API_URL}/${id}`,
-  suggestCode: (storageType, facilityId) => {
+  suggestCode: (storageType, pharmacyId) => {
     const query = new URLSearchParams();
     if (storageType) query.append("storageType", storageType);
-    if (facilityId) query.append("facilityId", facilityId);
+    if (pharmacyId) query.append("pharmacyId", pharmacyId);
     return `${API_URL}/suggest-code?${query.toString()}`;
   },
 };

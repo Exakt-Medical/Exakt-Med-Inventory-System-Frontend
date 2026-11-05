@@ -3,6 +3,7 @@ import { Route, Routes, useLocation, Navigate } from "react-router-dom";
 // Auth Pages
 import Login from "./features/authentication/login";
 import SelectFacility from "./features/authentication/selectFacility";
+import SelectPharmacy from "./features/authentication/selectPharmacy";
 import SelectProject from "./features/authentication/selectProject";
 import Unauthorized from "./features/authentication/unauthorized";
 import UnderMaintenance from "./features/authentication/underMaintenance";
@@ -41,6 +42,7 @@ function App() {
     location.pathname === "/maintenance" ||
     location.pathname === "/under-maintenance" ||
     location.pathname === "/select-facility" ||
+    location.pathname === "/select-pharmacy" ||
     location.pathname === "/select-project";
 
   return (
@@ -60,9 +62,10 @@ function App() {
           <Route path="/unauthorized" element={<Unauthorized />} />
           <Route path="/under-maintenance" element={<UnderMaintenance />} />
 
-          {/* Authenticated: Facility Selection (All Roles) */}
+          {/* Authenticated: Facility & Pharmacy Selection (All Roles) */}
           <Route element={<ProtectedRoute />}>
             <Route path="/select-facility" element={<SelectFacility />} />
+            <Route path="/select-pharmacy" element={<SelectPharmacy />} />
           </Route>
 
           {/* Super Admin Only Routes*/}

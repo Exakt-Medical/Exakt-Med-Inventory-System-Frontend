@@ -27,6 +27,15 @@ export function AuthProvider({ children }) {
     }
   });
 
+  const [pharmacy, setPharmacyState] = useState(() => {
+    try {
+      const pharmString = localStorage.getItem("currentPharmacy");
+      return pharmString ? JSON.parse(pharmString) : null;
+    } catch {
+      return null;
+    }
+  });
+
   const [project, setProjectState] = useState(() => {
     try {
       const projString = localStorage.getItem("currentProject");
@@ -53,6 +62,13 @@ export function AuthProvider({ children }) {
           setFacilityState(e.newValue ? JSON.parse(e.newValue) : null);
         } catch {
           setFacilityState(null);
+        }
+      }
+      if (e.key === "currentPharmacy") {
+        try {
+          setPharmacyState(e.newValue ? JSON.parse(e.newValue) : null);
+        } catch {
+          setPharmacyState(null);
         }
       }
       if (e.key === "currentProject") {
@@ -85,17 +101,6 @@ export function AuthProvider({ children }) {
     localStorage.setItem("currentUser", JSON.stringify(userData));
     setUser(userData);
 
-    // // Reset facility and project context on login
-    // localStorage.removeItem("currentFacility");
-    // setFacilityState(null);
-    // if (
-    //   userData.role !== ROLES.SUPER_ADMIN &&
-    //   userData.role !== "Super Admin"
-    // ) {
-    //   localStorage.removeItem("currentProject");
-    //   setProjectState(null);
-    // }
-
     const targetRoute = ROLE_DETAILS[userData?.role]?.initialRoute;
     navigate(targetRoute, { replace: true });
 
@@ -105,6 +110,16 @@ export function AuthProvider({ children }) {
   const selectProject = (projectData, navigateToFacility = true) => {
     localStorage.setItem("currentProject", JSON.stringify(projectData));
     setProjectState(projectData);
+    if (
+      facility &&
+      facility.projectId &&
+      String(facility.projectId) !== String(projectData?.id)
+    ) {
+      localStorage.removeItem("currentFacility");
+      setFacilityState(null);
+      localStorage.removeItem("currentPharmacy");
+      setPharmacyState(null);
+    }
     if (navigateToFacility) {
       navigate("/select-facility", { replace: true });
     }
@@ -119,11 +134,20 @@ export function AuthProvider({ children }) {
     setProjectState(projectData);
   };
 
-  const selectFacility = (facilityData) => {
+  const selectFacility = (facilityData, navigateToPharmacy = true) => {
     localStorage.setItem("currentFacility", JSON.stringify(facilityData));
     setFacilityState(facilityData);
-    const redirectPath = getRedirectPathForRole(user?.role);
-    navigate(redirectPath, { replace: true });
+    if (
+      pharmacy &&
+      pharmacy.facilityId &&
+      String(pharmacy.facilityId) !== String(facilityData?.id)
+    ) {
+      localStorage.removeItem("currentPharmacy");
+      setPharmacyState(null);
+    }
+    if (navigateToPharmacy) {
+      navigate("/select-pharmacy", { replace: true });
+    }
   };
 
   const setFacility = (facilityData) => {
@@ -131,17 +155,37 @@ export function AuthProvider({ children }) {
       localStorage.setItem("currentFacility", JSON.stringify(facilityData));
     } else {
       localStorage.removeItem("currentFacility");
+      localStorage.removeItem("currentPharmacy");
+      setPharmacyState(null);
     }
     setFacilityState(facilityData);
+  };
+
+  const selectPharmacy = (pharmacyData) => {
+    localStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
+    setPharmacyState(pharmacyData);
+    const redirectPath = getRedirectPathForRole(user?.role);
+    navigate(redirectPath, { replace: true });
+  };
+
+  const setPharmacy = (pharmacyData) => {
+    if (pharmacyData) {
+      localStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
+    } else {
+      localStorage.removeItem("currentPharmacy");
+    }
+    setPharmacyState(pharmacyData);
   };
 
   const logout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("currentUser");
     localStorage.removeItem("currentFacility");
+    localStorage.removeItem("currentPharmacy");
     localStorage.removeItem("currentProject");
     setUser(null);
     setFacilityState(null);
+    setPharmacyState(null);
     setProjectState(null);
     navigate("/", { replace: true });
   };
@@ -150,6 +194,7 @@ export function AuthProvider({ children }) {
     () => ({
       user,
       facility,
+      pharmacy,
       project,
       isAuthenticated,
       login,
@@ -157,9 +202,11 @@ export function AuthProvider({ children }) {
       setProject,
       selectFacility,
       setFacility,
+      selectPharmacy,
+      setPharmacy,
       logout,
     }),
-    [user, facility, project, isAuthenticated],
+    [user, facility, pharmacy, project, isAuthenticated],
   );
 
   return (

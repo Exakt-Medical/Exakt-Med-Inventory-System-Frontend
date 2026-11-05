@@ -66,8 +66,9 @@ const normalizeOrder = (raw) => {
     estimatedCost: raw.totalPrice ?? raw.estimatedCost ?? 0,
     supplierId: raw.supplierId,
     supplierName: raw.supplierName || "Supplier",
-    targetFacility: raw.facilityName || raw.targetFacility || "Facility",
-    facilityId: raw.facilityId,
+    targetFacility: raw.pharmacyName || raw.facilityName || raw.targetFacility || "Pharmacy",
+    facilityId: raw.pharmacyId ?? raw.facilityId,
+    pharmacyId: raw.pharmacyId,
     priority: raw.priority || "Normal",
     status: raw.status === "Denied" ? "Rejected" : raw.status || "Pending",
     notes: raw.status === "Denied" ? "" : raw.notes || "",
@@ -91,16 +92,16 @@ const normalizeOrder = (raw) => {
 };
 
 function RequestedOrders() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
 
-  // Automatically detect current active facility
+  // Automatically detect current active pharmacy
   const currentFacilityName = useMemo(() => {
-    return facility?.name || "";
-  }, [facility]);
+    return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [pharmacy, facility]);
 
   const targetFacilityId = useMemo(() => {
-    return facility?.id || null;
-  }, [facility]);
+    return pharmacy?.id || null;
+  }, [pharmacy]);
 
   const [orders, setOrders] = useState([]);
   const [totalPages, setTotalPages] = useState(1);
@@ -186,7 +187,7 @@ function RequestedOrders() {
       setIsLoading(true);
       setFetchError(null);
       const params = {
-        facilityId: targetFacilityId,
+        pharmacyId: targetFacilityId,
         page: currentPage - 1,
         size: itemsPerPage,
         sortBy: "createdAt",

@@ -14,6 +14,7 @@ import {
   TrendingDown,
   FileText,
   Building2,
+  Store,
   Send,
   Pill,
   ClipboardCheck,
@@ -27,7 +28,9 @@ import dashboardService from "../../services/dashboard";
 import Skeleton from "../../components/common/skeleton";
 
 function ProcurementDashboard() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
+  const activePharmacyName =
+    pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
 
   const [metrics, setMetrics] = useState({
     totalReorder: 0,
@@ -46,7 +49,7 @@ function ProcurementDashboard() {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await dashboardService.getProcurementDashboard(facility?.id);
+      const data = await dashboardService.getProcurementDashboard(pharmacy?.id);
       if (data) {
         setMetrics(
           data.metrics || {
@@ -56,7 +59,7 @@ function ProcurementDashboard() {
             totalPendingOrders: 0,
             activeSuppliers: 0,
             totalUnitsOrderedMonth: 0,
-          }
+          },
         );
         setPriorityRestockSkus(data.priorityRestockSkus || []);
         setRecentOrderRequests(data.recentOrderRequests || []);
@@ -64,12 +67,14 @@ function ProcurementDashboard() {
     } catch (err) {
       console.error("Failed to fetch procurement dashboard data:", err);
       setError(
-        err?.response?.data?.message || err?.message || "Failed to load dashboard data"
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to load dashboard data",
       );
     } finally {
       setIsLoading(false);
     }
-  }, [facility?.id]);
+  }, [pharmacy?.id]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -96,14 +101,14 @@ function ProcurementDashboard() {
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-slide-up">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h1 className="text-2xl font-bold text-gray-900 tracking-tight">
               Procurement Officer Dashboard
             </h1>
-            {facility?.name && (
+            {activePharmacyName && (
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200">
-                <Building2 className="w-3.5 h-3.5" />
-                {facility.name}
+                <Store className="w-3.5 h-3.5" />
+                {activePharmacyName}
               </span>
             )}
           </div>
@@ -215,7 +220,8 @@ function ProcurementDashboard() {
                   {metrics.totalMinimumSkus}
                 </h3>
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 mt-1 bg-red-100/70 px-2 py-0.5 rounded-full">
-                  <AlertCircle className="w-3 h-3" /> Critical shortage (&le; Min safety level)
+                  <AlertCircle className="w-3 h-3" /> Critical shortage (&le;
+                  Min safety level)
                 </span>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 text-red-600 border border-red-200 shadow-xs">
@@ -246,7 +252,8 @@ function ProcurementDashboard() {
                   {metrics.totalBatches}
                 </h3>
                 <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 mt-1 bg-blue-100/70 px-2 py-0.5 rounded-full">
-                  <Boxes className="w-3 h-3" /> Tracked inventory lots across facilities
+                  <Boxes className="w-3 h-3" /> Tracked inventory lots in
+                  pharmacy
                 </span>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 border border-blue-200 shadow-xs">
@@ -268,7 +275,8 @@ function ProcurementDashboard() {
                   Priority Restock Requirements
                 </h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  SKUs with critical stock shortages requiring immediate purchase orders
+                  SKUs with critical stock shortages requiring immediate
+                  purchase orders
                 </p>
               </div>
               <Link
@@ -282,7 +290,10 @@ function ProcurementDashboard() {
             <div className="divide-y divide-gray-100">
               {isLoading ? (
                 Array.from({ length: 4 }).map((_, idx) => (
-                  <div key={`skel-restock-${idx}`} className="p-4 flex items-center justify-between gap-3">
+                  <div
+                    key={`skel-restock-${idx}`}
+                    className="p-4 flex items-center justify-between gap-3"
+                  >
                     <div className="flex items-start gap-3 flex-1">
                       <Skeleton className="h-9 w-9 rounded-lg shrink-0 mt-0.5" />
                       <div className="space-y-1.5 flex-1">
@@ -371,7 +382,9 @@ function ProcurementDashboard() {
               ) : (
                 <div className="p-8 text-center text-xs text-gray-500">
                   <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
-                  <p className="font-bold text-gray-700">Healthy Stock Levels</p>
+                  <p className="font-bold text-gray-700">
+                    Healthy Stock Levels
+                  </p>
                   <p className="text-gray-400 mt-0.5">
                     No SKUs currently below reorder or minimum safety threshold.
                   </p>
@@ -382,7 +395,8 @@ function ProcurementDashboard() {
 
           <div className="p-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
             <span>
-              Showing {priorityRestockSkus.length} critical items needing purchase action.
+              Showing {priorityRestockSkus.length} critical items needing
+              purchase action.
             </span>
             <Link
               to="/procurement/order-request"
@@ -476,7 +490,9 @@ function ProcurementDashboard() {
               ) : (
                 <div className="p-8 text-center text-xs text-gray-500">
                   <ShoppingCart className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                  <p className="font-bold text-gray-700">No Recent Purchase Requisitions</p>
+                  <p className="font-bold text-gray-700">
+                    No Recent Purchase Requisitions
+                  </p>
                   <p className="text-gray-400 mt-0.5">
                     Submitted purchase orders will appear here in real time.
                   </p>
@@ -486,7 +502,9 @@ function ProcurementDashboard() {
           </div>
 
           <div className="p-3.5 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-xs">
-            <span className="text-gray-500">Track all submitted purchase orders?</span>
+            <span className="text-gray-500">
+              Track all submitted purchase orders?
+            </span>
             <Link
               to="/procurement/requested-orders"
               className="text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"

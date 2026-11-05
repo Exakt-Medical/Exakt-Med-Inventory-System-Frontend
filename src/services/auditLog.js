@@ -11,7 +11,7 @@ const getAuthHeaders = (config = {}) => {
 
 const auditLogService = {
   getAuditLogs: async (
-    facilityId,
+    pharmacyId,
     module = "",
     severity = "",
     search = "",
@@ -21,11 +21,11 @@ const auditLogService = {
     sortDir = "DESC",
     config = {},
   ) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch audit logs.");
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is strictly required to fetch audit logs.");
     }
     const response = await axios.get(
-      auditLogApi.getAuditLogs(facilityId, module, severity, search, page, size, sortBy, sortDir),
+      auditLogApi.getAuditLogs(pharmacyId, module, severity, search, page, size, sortBy, sortDir),
       {
         ...config,
         headers: getAuthHeaders(config),
@@ -34,12 +34,12 @@ const auditLogService = {
     return response.data;
   },
 
-  getAuditLogSummary: async (facilityId, config = {}) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch audit log summary.");
+  getAuditLogSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is strictly required to fetch audit log summary.");
     }
     const response = await axios.get(
-      auditLogApi.getAuditLogSummary(facilityId),
+      auditLogApi.getAuditLogSummary(pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),

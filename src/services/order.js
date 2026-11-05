@@ -19,33 +19,35 @@ const orderService = {
   },
 
   getOrdersPaginated: async (params, config = {}) => {
-    if (!params?.facilityId) {
-      throw new Error("Facility ID is required to fetch orders.");
+    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is required to fetch orders.");
     }
-    const response = await axios.get(orderApi.getOrders(params), {
+    const normalizedParams = { ...params, pharmacyId };
+    delete normalizedParams.facilityId;
+    const response = await axios.get(orderApi.getOrders(normalizedParams), {
       ...config,
       headers: getAuthHeaders(config),
     });
     return response.data;
   },
 
-
-  getOrderSummary: async (facilityId, config = {}) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is required to fetch order summary.");
+  getOrderSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is required to fetch order summary.");
     }
-    const response = await axios.get(orderApi.getOrderSummary(facilityId), {
+    const response = await axios.get(orderApi.getOrderSummary(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });
     return response.data;
   },
 
-  getReceivableOrders: async (facilityId, config = {}) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is required to fetch receivable orders.");
+  getReceivableOrders: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is required to fetch receivable orders.");
     }
-    const response = await axios.get(orderApi.getReceivableOrders(facilityId), {
+    const response = await axios.get(orderApi.getReceivableOrders(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });

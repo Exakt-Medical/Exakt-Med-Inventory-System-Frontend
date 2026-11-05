@@ -23,12 +23,13 @@ const restockRequestService = {
   },
 
   getAllRestockRequests: async (
-    facilityId = null,
+    pharmacyId = null,
     pendingOnly = false,
     config = {},
   ) => {
+    if (!pharmacyId) return [];
     const response = await axios.get(
-      restockRequestApi.getAllRequests(facilityId, pendingOnly),
+      restockRequestApi.getAllRequests(pharmacyId, pendingOnly),
       {
         ...config,
         headers: getAuthHeaders(config),

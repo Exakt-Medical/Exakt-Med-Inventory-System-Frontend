@@ -10,30 +10,33 @@ const getAuthHeaders = (config = {}) => {
 };
 
 const dashboardService = {
-  getPharmacistDashboard: async (facilityId, config = {}) => {
+  getPharmacistDashboard: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
     const response = await axios.get(
-      dashboardApi.getPharmacistDashboard(facilityId),
+      dashboardApi.getPharmacistDashboard(pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
 
-  getProcurementDashboard: async (facilityId, config = {}) => {
+  getProcurementDashboard: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
     const response = await axios.get(
-      dashboardApi.getProcurementDashboard(facilityId),
+      dashboardApi.getProcurementDashboard(pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
 
-  getSummary: async (facilityId, config = {}) => {
-    const response = await axios.get(dashboardApi.getSummary(facilityId), {
+  getSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
+    const response = await axios.get(dashboardApi.getSummary(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });

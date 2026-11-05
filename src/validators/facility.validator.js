@@ -1,35 +1,44 @@
-import { isRequired, minLength, isEmail, runValidation } from "./rules";
-
 /**
- * Validate Facility Form (Add or Edit)
+ * Validates Facility Registration & Update Form Data
+ * Enforces basic presence rules for Facility Name, Facility Code, and Address
+ *
+ * @param {Object} formData - The facility form state object
+ * @returns {Object} { isValid: boolean, errors: Object }
  */
-export const validateFacilityForm = (
-  formData = {},
-  { activeProjectId = null, checkProjectId = false } = {}
-) => {
-  const errors = {
-    name:
-      isRequired(formData.name, "Facility name is required.") ||
-      minLength(formData.name, 2, "Facility name must be at least 2 characters."),
-    facilityCode: isRequired(
-      formData.facilityCode,
-      "Facility code is required."
-    ),
-    contactPerson: isRequired(
-      formData.contactPerson,
-      "Contact person is required."
-    ),
-    email:
-      isRequired(formData.email, "Email address is required.") ||
-      isEmail(formData.email, "Please enter a valid email address."),
-    phone: isRequired(formData.phone, "Phone number is required."),
-    address: isRequired(formData.address, "Physical address is required."),
-  };
+export const validateFacilityForm = (formData) => {
+  const errors = {};
 
-  if (checkProjectId && !activeProjectId) {
-    errors.general =
-      "An active project is required to create a facility. Please select a project first.";
+  const name = formData.name?.trim() || "";
+  const facilityCode = formData.facilityCode?.trim() || "";
+  const address = formData.address?.trim() || "";
+
+  // 1. Facility Name Validation (Required, 2-150 chars)
+  if (!name) {
+    errors.name = "Facility name is required.";
+  } else if (name.length < 2) {
+    errors.name = "Facility name must be at least 2 characters.";
+  } else if (name.length > 150) {
+    errors.name = "Facility name cannot exceed 150 characters.";
   }
 
-  return runValidation(errors);
+  // 2. Facility Code Validation (Required, 1-100 chars)
+  if (!facilityCode) {
+    errors.facilityCode = "Facility code is required.";
+  } else if (facilityCode.length > 100) {
+    errors.facilityCode = "Facility code cannot exceed 100 characters.";
+  }
+
+  // 3. Physical Address Validation (Required, 5-255 chars)
+  if (!address) {
+    errors.address = "Physical address is required.";
+  } else if (address.length < 5) {
+    errors.address = "Please enter a complete physical address (min. 5 characters).";
+  } else if (address.length > 255) {
+    errors.address = "Address cannot exceed 255 characters.";
+  }
+
+  return {
+    isValid: Object.keys(errors).length === 0,
+    errors,
+  };
 };

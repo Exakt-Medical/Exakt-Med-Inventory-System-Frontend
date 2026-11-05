@@ -2,17 +2,17 @@ const BASE_URL = import.meta.env.VITE_BACKEND_URL;
 const API_URL = `${BASE_URL}/api/dashboard`;
 
 const dashboardApi = {
-  getPharmacistDashboard: (facilityId) =>
-    facilityId
-      ? `${API_URL}/pharmacist?facilityId=${facilityId}`
+  getPharmacistDashboard: (pharmacyId) =>
+    pharmacyId
+      ? `${API_URL}/pharmacist?pharmacyId=${pharmacyId}`
       : `${API_URL}/pharmacist`,
-  getProcurementDashboard: (facilityId) =>
-    facilityId
-      ? `${API_URL}/procurement?facilityId=${facilityId}`
+  getProcurementDashboard: (pharmacyId) =>
+    pharmacyId
+      ? `${API_URL}/procurement?pharmacyId=${pharmacyId}`
       : `${API_URL}/procurement`,
-  getSummary: (facilityId) =>
-    facilityId
-      ? `${API_URL}/summary?facilityId=${facilityId}`
+  getSummary: (pharmacyId) =>
+    pharmacyId
+      ? `${API_URL}/summary?pharmacyId=${pharmacyId}`
       : `${API_URL}/summary`,
 };
 

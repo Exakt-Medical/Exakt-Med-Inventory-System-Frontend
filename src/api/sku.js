@@ -4,7 +4,7 @@ const API_URL = `${BASE_URL}/api/skus`;
 const skuApi = {
   createSku: `${API_URL}`,
   getSkusPaginated: ({
-    facilityId,
+    pharmacyId,
     search,
     status,
     stockFilter,
@@ -13,21 +13,21 @@ const skuApi = {
     sortBy = "brandName",
     sortDir = "ASC",
   }) => {
-    let url = `${API_URL}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
     const filterValue = status || stockFilter;
     if (filterValue && filterValue !== "ALL") url += `&status=${encodeURIComponent(filterValue)}`;
     return url;
   },
-  getSkuSummary: (facilityId) => `${API_URL}/summary?facilityId=${facilityId}`,
-  getDropdownSkus: (facilityId) => `${API_URL}/dropdown?facilityId=${facilityId}`,
+  getSkuSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
+  getDropdownSkus: (pharmacyId) => `${API_URL}/dropdown?pharmacyId=${pharmacyId}`,
   getSkuById: (id) => `${API_URL}/${id}`,
   updateSku: (id) => `${API_URL}/${id}`,
   deleteSku: (id) => `${API_URL}/${id}`,
   adjustStock: (id) => `${API_URL}/${id}/adjust-stock`,
-  getReorderNeededSkus: (facilityId, search = "") => {
+  getReorderNeededSkus: (pharmacyId, search = "") => {
     const params = new URLSearchParams();
-    params.append("facilityId", facilityId);
+    params.append("pharmacyId", pharmacyId);
     if (search) params.append("search", search);
     return `${API_URL}/reorder-needed?${params.toString()}`;
   },

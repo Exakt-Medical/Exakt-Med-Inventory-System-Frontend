@@ -15,15 +15,21 @@ export const DEFAULT_USER_FORM = {
 };
 
 // ==========================================
-// Facility Management & Selection
+// Facility & Pharmacy Management & Selection
 // ==========================================
 export const DEFAULT_FACILITY_FORM = {
   name: "",
   facilityCode: "",
-  contactPerson: "",
-  email: "",
-  phone: "",
   address: "",
+  status: "Active",
+};
+
+export const DEFAULT_PHARMACY_FORM = {
+  pharmacyName: "",
+  pharmacyCode: "",
+  lguId: "",
+  address: "",
+  licenseNo: "",
   status: "Active",
 };
 

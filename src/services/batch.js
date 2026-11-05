@@ -11,28 +11,32 @@ const getAuthHeaders = (config = {}) => {
 
 const batchService = {
   getBatchesPaginated: async (params, config = {}) => {
-    if (!params?.facilityId) {
-      throw new Error("Facility ID is required to fetch batches.");
+    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is required to fetch batches.");
     }
-    const response = await axios.get(batchApi.getBatchesPaginated(params), {
+    const response = await axios.get(
+      batchApi.getBatchesPaginated({ ...params, pharmacyId }),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
+    return response.data;
+  },
+
+  getBatchSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
+    const response = await axios.get(batchApi.getBatchSummary(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });
     return response.data;
   },
 
-  getBatchSummary: async (facilityId, config = {}) => {
-    if (!facilityId) return null;
-    const response = await axios.get(batchApi.getBatchSummary(facilityId), {
-      ...config,
-      headers: getAuthHeaders(config),
-    });
-    return response.data;
-  },
-
-  getDistinctBatchSkus: async (facilityId, config = {}) => {
-    if (!facilityId) return [];
-    const response = await axios.get(batchApi.getDistinctBatchSkus(facilityId), {
+  getDistinctBatchSkus: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return [];
+    const response = await axios.get(batchApi.getDistinctBatchSkus(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });
@@ -87,15 +91,15 @@ const batchService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },
 
-  getBatchesBySku: async (skuId, facilityId, config = {}) => {
-    if (!skuId || !facilityId) return [];
+  getBatchesBySku: async (skuId, pharmacyId, config = {}) => {
+    if (!skuId || !pharmacyId) return [];
     const response = await axios.get(
-      batchApi.getBatchesBySku(skuId, facilityId),
+      batchApi.getBatchesBySku(skuId, pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),
@@ -104,15 +108,15 @@ const batchService = {
     return response.data;
   },
 
-  processExpiredBatches: async (facilityId, skuId, config = {}) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is required to process expired batches.");
+  processExpiredBatches: async (pharmacyId, skuId, config = {}) => {
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is required to process expired batches.");
     }
     if (!skuId) {
       throw new Error("SKU ID is required to process expired batches.");
     }
     const response = await axios.post(
-      batchApi.processExpiredBatches(facilityId, skuId),
+      batchApi.processExpiredBatches(pharmacyId, skuId),
       null,
       {
         ...config,
@@ -129,7 +133,7 @@ const batchService = {
       {
         ...config,
         headers: getAuthHeaders(config),
-      }
+      },
     );
     return response.data;
   },

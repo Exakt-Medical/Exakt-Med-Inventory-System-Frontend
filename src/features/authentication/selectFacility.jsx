@@ -3,23 +3,15 @@ import { useNavigate } from "react-router-dom";
 import {
   Building2,
   MapPin,
-  Phone,
-  Mail,
-  User,
+  Store,
   CheckCircle2,
-  Warehouse,
-  Hospital,
-  Stethoscope,
-  ShieldAlert,
   Sparkles,
   Layers,
   ArrowLeft,
-  ArrowRight,
   Loader2,
   Plus,
   AlertCircle,
   Pencil,
-  Trash2,
   Check,
   Users,
   RefreshCw,
@@ -58,9 +50,8 @@ function SelectFacility() {
     setProject,
     setFacility,
     logout,
-    isAuthenticated,
   } = useAuth();
-  const { isSuperAdmin, isAdmin, roleDetails } = useRole();
+  const { isSuperAdmin, roleDetails } = useRole();
 
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFacilityId, setSelectedFacilityId] = useState(null);
@@ -237,7 +228,7 @@ function SelectFacility() {
     }
   }, [activeProject?.id, isSuperAdmin, fetchFacilities, fetchUsers]);
 
-  // Facilities assigned to the user (Super Admins: all for active project; Admins/staff: backend provides assigned only)
+  // Facilities assigned to the user
   const userAssignedFacilities = useMemo(() => {
     if (!user) return [];
     return facilityList;
@@ -253,8 +244,7 @@ function SelectFacility() {
       return (
         (facility.name || "").toLowerCase().includes(query) ||
         (facility.facilityCode || "").toLowerCase().includes(query) ||
-        (facility.address || "").toLowerCase().includes(query) ||
-        (facility.contactPerson || "").toLowerCase().includes(query)
+        (facility.address || "").toLowerCase().includes(query)
       );
     });
   }, [userAssignedFacilities, searchQuery]);
@@ -326,9 +316,6 @@ function SelectFacility() {
         projectId: targetProjectId,
         facilityCode: formData.facilityCode.trim(),
         name: formData.name.trim(),
-        contactPerson: formData.contactPerson.trim(),
-        email: formData.email.trim(),
-        phone: formData.phone.trim(),
         address: formData.address.trim(),
         status: formData.status || "Active",
       };
@@ -359,9 +346,6 @@ function SelectFacility() {
     setEditFormData({
       name: fac.name || "",
       facilityCode: fac.facilityCode || "",
-      contactPerson: fac.contactPerson || "",
-      email: fac.email || "",
-      phone: fac.phone || "",
       address: fac.address || "",
       status: fac.status || "Active",
       projectId: fac.projectId
@@ -410,9 +394,6 @@ function SelectFacility() {
         projectId: targetProjectId,
         facilityCode: editFormData.facilityCode.trim(),
         name: editFormData.name.trim(),
-        contactPerson: editFormData.contactPerson.trim(),
-        email: editFormData.email.trim(),
-        phone: editFormData.phone.trim(),
         address: editFormData.address.trim(),
         status: editFormData.status || "Active",
       };
@@ -769,7 +750,7 @@ function SelectFacility() {
           badgeIcon={Sparkles}
           badgeTheme="blue"
           title="Select Your Operating Facility"
-          description={`Welcome back, ${user.name}. Please choose an assigned hospital branch or medical warehouse to access your workspace.`}
+          description={`Welcome back, ${user.name}. Please choose an assigned hospital branch or medical warehouse to view its pharmacies.`}
         >
           {/* Super Admin Mother Project indicator and switcher */}
           {isSuperAdmin && activeProject && (
@@ -796,7 +777,7 @@ function SelectFacility() {
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           onClearSearch={() => setSearchQuery("")}
-          placeholder="Search facility by name, code, or city..."
+          placeholder="Search facility by name, code, or address..."
           showingCount={filteredFacilities.length}
           totalCount={userAssignedFacilities.length}
           itemLabel="assigned branches"
@@ -860,10 +841,14 @@ function SelectFacility() {
         ) : filteredFacilities.length > 0 ? (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 animate-slide-up-2">
             {filteredFacilities.map((facility) => {
-              const isActive = facility.status === "Active";
               const isSelected = selectedFacilityId === facility.id;
               const isCurrentlyActiveInSession =
                 currentSavedFacility?.id === facility.id;
+              const pharmaciesCount = Array.isArray(facility.pharmacies)
+                ? facility.pharmacies.length
+                : Array.isArray(facility.pharmacyIds)
+                  ? facility.pharmacyIds.length
+                  : 0;
 
               return (
                 <PortalEntityCard
@@ -885,6 +870,7 @@ function SelectFacility() {
                   editRoles={[ROLES.SUPER_ADMIN]}
                   editTitle="Edit Facility"
                   deleteTitle="Delete Facility"
+                  showAssigned={isSuperAdmin}
                   assignedLabel="Assigned Users"
                   assignedItems={getAssignedUsers(facility.id)}
                   assignedIconType="user"
@@ -901,22 +887,15 @@ function SelectFacility() {
                     <span className="line-clamp-2">{facility.address || "—"}</span>
                   </div>
 
-                  {/* Contact Person Details */}
-                  <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5 text-xs text-gray-500">
-                    <div className="flex items-center gap-2">
-                      <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      <span className="truncate font-medium text-gray-700">
-                        {facility.contactPerson || "—"}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      <span className="truncate">{facility.phone || "—"}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                      <span className="truncate">{facility.email || "—"}</span>
-                    </div>
+                  {/* Registered Pharmacies Count */}
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-600">
+                    <span className="inline-flex items-center gap-1.5 font-medium text-blue-700">
+                      <Store className="w-3.5 h-3.5 text-blue-500" />
+                      {pharmaciesCount}{" "}
+                      {pharmaciesCount === 1
+                        ? "Registered Pharmacy"
+                        : "Registered Pharmacies"}
+                    </span>
                   </div>
                 </PortalEntityCard>
               );
@@ -959,7 +938,7 @@ function SelectFacility() {
       {/* Footer */}
       <PortalFooter text="Exakt Med Multi-Facility Inventory Management System © 2026-2027" />
 
-      {/* Super Admin & Admin Add Facility Modal */}
+      {/* Super Admin Add Facility Modal */}
       <Modal
         isOpen={isAddModalOpen}
         onClose={handleCloseAddModal}
@@ -1075,105 +1054,6 @@ function SelectFacility() {
               </select>
             </div>
 
-            {/* Contact Person */}
-            <div>
-              <label
-                htmlFor="fac-contactPerson"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Contact Person <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  id="fac-contactPerson"
-                  type="text"
-                  name="contactPerson"
-                  value={formData.contactPerson}
-                  onChange={handleInputChange}
-                  placeholder="e.g. Dr. Jonathan Mendoza"
-                  className={`input text-xs pl-8 ${
-                    formErrors.contactPerson
-                      ? "border-red-400 focus:border-red-500"
-                      : ""
-                  }`}
-                  disabled={isCreatingFacility}
-                />
-                <User className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-              {formErrors.contactPerson && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  {formErrors.contactPerson}
-                </p>
-              )}
-            </div>
-
-            {/* Email */}
-            <div>
-              <label
-                htmlFor="fac-email"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Email Address <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  id="fac-email"
-                  type="email"
-                  name="email"
-                  value={formData.email}
-                  onChange={handleInputChange}
-                  placeholder="admin@exaktmed.com"
-                  className={`input text-xs pl-8 ${
-                    formErrors.email
-                      ? "border-red-400 focus:border-red-500"
-                      : ""
-                  }`}
-                  disabled={isCreatingFacility}
-                />
-                <Mail className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-              {formErrors.email && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  {formErrors.email}
-                </p>
-              )}
-            </div>
-
-            {/* Phone */}
-            <div className="sm:col-span-2">
-              <label
-                htmlFor="fac-phone"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Phone / Hotline <span className="text-red-500">*</span>
-              </label>
-              <div className="relative">
-                <input
-                  id="fac-phone"
-                  type="text"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleInputChange}
-                  placeholder="+63 2 8920 5000"
-                  className={`input text-xs pl-8 ${
-                    formErrors.phone
-                      ? "border-red-400 focus:border-red-500"
-                      : ""
-                  }`}
-                  disabled={isCreatingFacility}
-                />
-                <Phone className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
-              {formErrors.phone && (
-                <p className="text-xs text-red-500 mt-1 flex items-center gap-1">
-                  <AlertCircle className="w-3.5 h-3.5" />
-                  {formErrors.phone}
-                </p>
-              )}
-            </div>
-
             {/* Address */}
             <div className="sm:col-span-2">
               <label
@@ -1236,7 +1116,7 @@ function SelectFacility() {
         </form>
       </Modal>
 
-      {/* Super Admin & Admin Edit Facility Modal */}
+      {/* Super Admin Edit Facility Modal */}
       <Modal
         isOpen={isEditModalOpen}
         onClose={() => !isUpdatingFacility && handleCloseEditModal()}
@@ -1251,8 +1131,7 @@ function SelectFacility() {
                 Modify Facility Information
               </p>
               <p className="mt-0.5 text-amber-800">
-                Update operational branch details, contact points, or operating
-                status.
+                Update operational branch details, address, or operating status.
               </p>
             </div>
           </div>
@@ -1342,78 +1221,6 @@ function SelectFacility() {
               </select>
             </div>
 
-            {/* Contact Person */}
-            <div>
-              <label
-                htmlFor="edit-fac-contact"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Contact Person <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="edit-fac-contact"
-                type="text"
-                name="contactPerson"
-                value={editFormData.contactPerson}
-                onChange={handleEditInputChange}
-                className={`input text-xs ${editFormErrors.contactPerson ? "border-red-500" : ""}`}
-                disabled={isUpdatingFacility}
-              />
-              {editFormErrors.contactPerson && (
-                <p className="text-[11px] text-red-500 mt-1">
-                  {editFormErrors.contactPerson}
-                </p>
-              )}
-            </div>
-
-            {/* Contact Email */}
-            <div>
-              <label
-                htmlFor="edit-fac-email"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Contact Email <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="edit-fac-email"
-                type="email"
-                name="email"
-                value={editFormData.email}
-                onChange={handleEditInputChange}
-                className={`input text-xs ${editFormErrors.email ? "border-red-500" : ""}`}
-                disabled={isUpdatingFacility}
-              />
-              {editFormErrors.email && (
-                <p className="text-[11px] text-red-500 mt-1">
-                  {editFormErrors.email}
-                </p>
-              )}
-            </div>
-
-            {/* Contact Phone */}
-            <div className="sm:col-span-2">
-              <label
-                htmlFor="edit-fac-phone"
-                className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-              >
-                Phone Number <span className="text-red-500">*</span>
-              </label>
-              <input
-                id="edit-fac-phone"
-                type="text"
-                name="phone"
-                value={editFormData.phone}
-                onChange={handleEditInputChange}
-                className={`input text-xs ${editFormErrors.phone ? "border-red-500" : ""}`}
-                disabled={isUpdatingFacility}
-              />
-              {editFormErrors.phone && (
-                <p className="text-[11px] text-red-500 mt-1">
-                  {editFormErrors.phone}
-                </p>
-              )}
-            </div>
-
             {/* Address */}
             <div className="sm:col-span-2">
               <label
@@ -1468,7 +1275,7 @@ function SelectFacility() {
         </form>
       </Modal>
 
-      {/* Super Admin & Admin Delete Facility Confirmation Modal */}
+      {/* Super Admin Delete Facility Confirmation Modal */}
       <DeleteModal
         isOpen={isDeleteModalOpen}
         onClose={handleCloseDeleteModal}
@@ -1498,7 +1305,7 @@ function SelectFacility() {
         confirmText="Delete Facility"
       />
 
-      {/* Super Admin & Admin Assign Users Modal */}
+      {/* Super Admin Assign Users Modal */}
       <Modal
         isOpen={isAssignUserModalOpen}
         onClose={() => setIsAssignUserModalOpen(false)}

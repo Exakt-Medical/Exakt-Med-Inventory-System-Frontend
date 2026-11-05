@@ -4,24 +4,24 @@ const SKU_API_URL = `${BASE_URL}/api/skus`;
 
 const inventoryTransactionApi = {
   // Ledger (Bin Card) endpoints
-  getLedger: (skuId, facilityId, startDate, endDate) => {
-    let url = `${API_URL}/ledger?facilityId=${facilityId}&skuId=${skuId}`;
+  getLedger: (skuId, pharmacyId, startDate, endDate) => {
+    let url = `${API_URL}/ledger?pharmacyId=${pharmacyId}&skuId=${skuId}`;
     if (startDate) url += `&startDate=${startDate}`;
     if (endDate) url += `&endDate=${endDate}`;
     return url;
   },
 
   // Backward compatibility alias for Bin Card
-  getSkuBinCard: (skuId, facilityId, startDate, endDate) => {
-    let url = `${API_URL}/ledger?facilityId=${facilityId}&skuId=${skuId}`;
+  getSkuBinCard: (skuId, pharmacyId, startDate, endDate) => {
+    let url = `${API_URL}/ledger?pharmacyId=${pharmacyId}&skuId=${skuId}`;
     if (startDate) url += `&startDate=${startDate}`;
     if (endDate) url += `&endDate=${endDate}`;
     return url;
   },
 
   // Transaction list endpoints
-  getTransactionsByFacility: (
-    facilityId,
+  getTransactionsByPharmacy: (
+    pharmacyId,
     types = [],
     page = 0,
     size = 10,
@@ -29,7 +29,7 @@ const inventoryTransactionApi = {
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (types && types.length > 0) {
       const typeParams = Array.isArray(types) ? types.join(",") : types;
       url += `&types=${encodeURIComponent(typeParams)}`;
@@ -40,9 +40,8 @@ const inventoryTransactionApi = {
     return url;
   },
 
-  getTransactionsBySku: (
-    skuId,
-    facilityId,
+  getTransactionsByFacility: (
+    pharmacyId,
     types = [],
     page = 0,
     size = 10,
@@ -50,7 +49,28 @@ const inventoryTransactionApi = {
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}/sku/${skuId}?facilityId=${facilityId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    return inventoryTransactionApi.getTransactionsByPharmacy(
+      pharmacyId,
+      types,
+      page,
+      size,
+      search,
+      sortBy,
+      sortDir,
+    );
+  },
+
+  getTransactionsBySku: (
+    skuId,
+    pharmacyId,
+    types = [],
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+  ) => {
+    let url = `${API_URL}/sku/${skuId}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (types && types.length > 0) {
       const typeParams = Array.isArray(types) ? types.join(",") : types;
       url += `&types=${encodeURIComponent(typeParams)}`;
@@ -64,31 +84,49 @@ const inventoryTransactionApi = {
   // Stock Adjustment endpoints
   adjustStock: (id) => `${SKU_API_URL}/${id}/adjust-stock`,
 
-  getAdjustmentLogsByFacility: (
-    facilityId,
+  getAdjustmentLogsByPharmacy: (
+    pharmacyId,
     page = 0,
     size = 10,
     search = "",
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}?facilityId=${facilityId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) {
       url += `&search=${encodeURIComponent(search.trim())}`;
     }
     return url;
   },
 
-  getAdjustmentLogsBySku: (
-    skuId,
-    facilityId,
+  getAdjustmentLogsByFacility: (
+    pharmacyId,
     page = 0,
     size = 10,
     search = "",
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}/sku/${skuId}?facilityId=${facilityId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    return inventoryTransactionApi.getAdjustmentLogsByPharmacy(
+      pharmacyId,
+      page,
+      size,
+      search,
+      sortBy,
+      sortDir,
+    );
+  },
+
+  getAdjustmentLogsBySku: (
+    skuId,
+    pharmacyId,
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+  ) => {
+    let url = `${API_URL}/sku/${skuId}?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) {
       url += `&search=${encodeURIComponent(search.trim())}`;
     }
@@ -96,8 +134,8 @@ const inventoryTransactionApi = {
   },
 
   // KPI Summary endpoints
-  getTransactionSummary: (facilityId, types = []) => {
-    let url = `${API_URL}/summary?facilityId=${facilityId}`;
+  getTransactionSummary: (pharmacyId, types = []) => {
+    let url = `${API_URL}/summary?pharmacyId=${pharmacyId}`;
     if (types && types.length > 0) {
       const typeParams = Array.isArray(types) ? types.join(",") : types;
       url += `&types=${encodeURIComponent(typeParams)}`;
@@ -105,8 +143,8 @@ const inventoryTransactionApi = {
     return url;
   },
 
-  getAdjustmentSummary: (facilityId) => {
-    return `${API_URL}/summary?facilityId=${facilityId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE`;
+  getAdjustmentSummary: (pharmacyId) => {
+    return `${API_URL}/summary?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE`;
   },
 };
 

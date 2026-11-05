@@ -16,6 +16,7 @@ import {
   Calendar,
   Lock,
   Building2,
+  Store,
   User as UserIcon,
   Loader2,
   RefreshCw,
@@ -41,13 +42,13 @@ import {
 } from "../../helpers/user";
 import { DEFAULT_USER_FORM } from "../../utils/constants";
 import userService from "../../services/user";
-import assignFacilityService from "../../services/assignFacility";
+import assignPharmacyService from "../../services/assignPharmacy";
 
 function UserManagement() {
-  const { facility, user: currentUser } = useAuth();
+  const { facility, pharmacy, user: currentUser } = useAuth();
   const { isSuperAdmin } = useRole();
 
-  const currentFacilityId = facility?.id || null;
+  const currentPharmacyId = pharmacy?.id || null;
 
   const [userList, setUserList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,12 +77,12 @@ function UserManagement() {
     handleApiError,
   } = useError();
 
-  // Fetch users from backend API (Facility-scoped)
+  // Fetch users from backend API (Pharmacy-scoped)
   const fetchUsers = useCallback(async () => {
-    if (!currentFacilityId) {
+    if (!currentPharmacyId) {
       setUserList([]);
       setIsLoading(false);
-      setFetchError("No facility selected. Please select a facility first.");
+      setFetchError("No pharmacy selected. Please select a pharmacy first.");
       return;
     }
 
@@ -89,7 +90,7 @@ function UserManagement() {
       setIsLoading(true);
       setFetchError("");
       const data =
-        await assignFacilityService.getUsersByFacilityId(currentFacilityId);
+        await assignPharmacyService.getUsersByPharmacyId(currentPharmacyId);
       if (Array.isArray(data)) {
         setUserList(
           data.map((u) => ({
@@ -105,16 +106,16 @@ function UserManagement() {
         setUserList([]);
       }
     } catch (err) {
-      console.error("Failed to load facility users:", err);
+      console.error("Failed to load pharmacy users:", err);
       setFetchError(
         err?.response?.data?.message ||
           err?.message ||
-          "Failed to load users for this facility.",
+          "Failed to load users for this pharmacy.",
       );
     } finally {
       setIsLoading(false);
     }
-  }, [currentFacilityId]);
+  }, [currentPharmacyId]);
 
   useEffect(() => {
     fetchUsers();
@@ -296,6 +297,10 @@ function UserManagement() {
 
     try {
       if (modalMode === "add") {
+        const isScopedRole =
+          formData.role !== ROLES.SUPER_ADMIN &&
+          formData.role !== "Super Admin";
+
         const payload = {
           name: formData.name.trim(),
           username: formData.username.trim(),
@@ -304,25 +309,21 @@ function UserManagement() {
           role: formData.role,
           status: formData.status === "Active",
           password: formData.password,
-          facilityId:
-            formData.role === ROLES.PHARMACIST ||
-            formData.role === ROLES.PROCUREMENT
-              ? currentFacilityId
-              : null,
+          pharmacyId: isScopedRole ? currentPharmacyId : null,
         };
 
         const createdUser = await userService.createUser(payload);
 
-        // Link newly created user to current active facility if not already linked
-        if (currentFacilityId && createdUser?.id) {
+        // Link newly created user to current active pharmacy if not already linked
+        if (currentPharmacyId && createdUser?.id && isScopedRole) {
           try {
-            await assignFacilityService.assignUsersToFacility(
-              Number(currentFacilityId),
+            await assignPharmacyService.assignUsersToPharmacy(
+              Number(currentPharmacyId),
               { userIds: [createdUser.id] },
             );
           } catch (assignErr) {
             console.warn(
-              `Failed to assign user ${createdUser.id} to facility ${currentFacilityId}:`,
+              `Failed to assign user ${createdUser.id} to pharmacy ${currentPharmacyId}:`,
               assignErr,
             );
           }
@@ -333,6 +334,10 @@ function UserManagement() {
       } else if (modalMode === "edit" && selectedUser) {
         if (!canEditUser(selectedUser)) return;
 
+        const isScopedRole =
+          formData.role !== ROLES.SUPER_ADMIN &&
+          formData.role !== "Super Admin";
+
         const payload = {
           name: formData.name.trim(),
           username: formData.username.trim(),
@@ -340,11 +345,9 @@ function UserManagement() {
           phone: formData.phone.trim(),
           role: formData.role,
           status: formData.status === "Active",
-          facilityId:
-            formData.role === ROLES.PHARMACIST ||
-            formData.role === ROLES.PROCUREMENT
-              ? currentFacilityId || selectedUser.facilityId || null
-              : null,
+          pharmacyId: isScopedRole
+            ? currentPharmacyId || selectedUser.pharmacyId || null
+            : null,
         };
 
         if (formData.password && formData.password.trim()) {
@@ -402,6 +405,12 @@ function UserManagement() {
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-xs font-bold text-blue-700">
                 <Building2 className="w-3.5 h-3.5" />
                 <span>{facility.name}</span>
+              </span>
+            )}
+            {(pharmacy?.pharmacyName || pharmacy?.name) && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-bold text-emerald-700">
+                <Store className="w-3.5 h-3.5" />
+                <span>{pharmacy.pharmacyName || pharmacy.name}</span>
               </span>
             )}
           </div>

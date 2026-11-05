@@ -19,7 +19,7 @@ const skuService = {
   },
 
   getSkusPaginated: async (
-    paramsOrFacilityId,
+    paramsOrPharmacyId,
     maybeSearch = "",
     maybeStatus = "ALL",
     maybePage = 0,
@@ -27,11 +27,14 @@ const skuService = {
     config = {},
   ) => {
     let params;
-    if (typeof paramsOrFacilityId === "object" && paramsOrFacilityId !== null) {
-      params = paramsOrFacilityId;
+    if (typeof paramsOrPharmacyId === "object" && paramsOrPharmacyId !== null) {
+      params = {
+        ...paramsOrPharmacyId,
+        pharmacyId: paramsOrPharmacyId.pharmacyId ?? paramsOrPharmacyId.facilityId,
+      };
     } else {
       params = {
-        facilityId: paramsOrFacilityId,
+        pharmacyId: paramsOrPharmacyId,
         search: maybeSearch,
         status: maybeStatus,
         page: maybePage,
@@ -39,7 +42,7 @@ const skuService = {
       };
     }
 
-    if (!params?.facilityId) {
+    if (!params?.pharmacyId) {
       return { content: [], totalPages: 1, totalElements: 0, currentPage: 1 };
     }
 
@@ -50,18 +53,18 @@ const skuService = {
     return response.data;
   },
 
-  getSkuSummary: async (facilityId, config = {}) => {
-    if (!facilityId) return null;
-    const response = await axios.get(skuApi.getSkuSummary(facilityId), {
+  getSkuSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
+    const response = await axios.get(skuApi.getSkuSummary(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });
     return response.data;
   },
 
-  getDropdownSkus: async (facilityId, config = {}) => {
-    if (!facilityId) return [];
-    const response = await axios.get(skuApi.getDropdownSkus(facilityId), {
+  getDropdownSkus: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return [];
+    const response = await axios.get(skuApi.getDropdownSkus(pharmacyId), {
       ...config,
       headers: getAuthHeaders(config),
     });
@@ -100,12 +103,12 @@ const skuService = {
     return response.data;
   },
 
-  getReorderNeededSkus: async (facilityId, search = "", config = {}) => {
-    if (!facilityId) {
-      throw new Error("Facility ID is strictly required to fetch reorder-needed SKUs.");
+  getReorderNeededSkus: async (pharmacyId, search = "", config = {}) => {
+    if (!pharmacyId) {
+      throw new Error("Pharmacy ID is strictly required to fetch reorder-needed SKUs.");
     }
     const response = await axios.get(
-      skuApi.getReorderNeededSkus(facilityId, search),
+      skuApi.getReorderNeededSkus(pharmacyId, search),
       {
         ...config,
         headers: getAuthHeaders(config),

@@ -3,9 +3,8 @@ const API_URL = `${BASE_URL}/api/restock-requests`;
 
 const restockRequestApi = {
   createRequest: `${API_URL}`,
-  getAllRequests: (facilityId, pendingOnly = false) => {
-    let url = `${API_URL}?pendingOnly=${Boolean(pendingOnly)}`;
-    if (facilityId) url += `&facilityId=${facilityId}`;
+  getAllRequests: (pharmacyId, pendingOnly = false) => {
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&pendingOnly=${Boolean(pendingOnly)}`;
     return url;
   },
   getRequestById: (id) => `${API_URL}/${id}`,

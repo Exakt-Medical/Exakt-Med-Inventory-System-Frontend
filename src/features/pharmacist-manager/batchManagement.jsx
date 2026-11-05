@@ -69,16 +69,16 @@ const REJECTION_REASON_OPTIONS = [
 ];
 
 function BatchManagement() {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
 
-  // Automatically detect current active facility from auth session
+  // Automatically detect current active pharmacy from auth session
   const currentFacilityName = useMemo(() => {
-    return facility?.name || "";
-  }, [facility]);
+    return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [pharmacy, facility]);
 
   const activeFacilityId = useMemo(() => {
-    return facility?.id || null;
-  }, [facility]);
+    return pharmacy?.id || null;
+  }, [pharmacy]);
 
   // Real batches loaded directly from backend API (server-side paginated)
   const [batchList, setBatchList] = useState([]);
@@ -186,7 +186,7 @@ function BatchManagement() {
     try {
       setIsLocationsLoading(true);
       const data = await libLocationService.getAllLocations({
-        facilityId: activeFacilityId,
+        pharmacyId: activeFacilityId,
         activeOnly: true,
       });
       setLocationsList(Array.isArray(data) ? data : []);
@@ -310,8 +310,9 @@ function BatchManagement() {
         orderNumber,
         status: po.status || "Approved",
         supplierName: po.supplierName || "Supplier",
-        targetFacility: po.facilityName || currentFacilityName,
-        facilityId: po.facilityId,
+        targetFacility: po.pharmacyName || po.facilityName || currentFacilityName,
+        facilityId: po.pharmacyId ?? po.facilityId,
+        pharmacyId: po.pharmacyId,
         totalQuantity: totalOrdered,
         totalReceivedUnits: totalReceived,
         totalRemainingUnits: totalRemaining,
@@ -386,11 +387,12 @@ function BatchManagement() {
         expiryDate: dto.expiryDate,
         quantity: Number(dto.units ?? dto.quantity) || 0,
         units: Number(dto.units ?? dto.quantity) || 0,
-        location: dto.facilityName || currentFacilityName,
+        location: dto.pharmacyName || dto.facilityName || currentFacilityName,
         locationId: dto.locationId,
         locationCode: dto.locationCode,
         locationStorageType: dto.locationStorageType,
-        facilityId: dto.facilityId,
+        facilityId: dto.pharmacyId ?? dto.facilityId,
+        pharmacyId: dto.pharmacyId,
         poReference:
           dto.poNumber ||
           (dto.orderId
@@ -447,7 +449,7 @@ function BatchManagement() {
       setIsBatchesLoading(true);
       setBatchesError(null);
       const pageData = await batchService.getBatchesPaginated({
-        facilityId: activeFacilityId,
+        pharmacyId: activeFacilityId,
         search: searchQuery.trim(),
         sku: selectedSkuFilter,
         status: selectedStatusFilter,
@@ -888,7 +890,7 @@ function BatchManagement() {
           if (units > 0 && b.batchNumber?.trim()) {
             const isQuar = Boolean(b.isQuarantined);
             batchPayload.push({
-              facilityId: activeFacilityId,
+              pharmacyId: activeFacilityId,
               orderedItemId: item.orderedItemId || item.id,
               batchNum: b.batchNumber.trim().toUpperCase(),
               units: units,
@@ -2786,6 +2788,7 @@ function BatchManagement() {
           setIsLocationModalOpen(false);
           setQuickAddTarget(null);
         }}
+        pharmacyId={activeFacilityId}
         facilityId={activeFacilityId}
         onLocationCreated={handleLocationCreated}
         initialView={locationModalInitialView}

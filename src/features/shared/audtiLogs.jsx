@@ -59,17 +59,17 @@ function AuditLogs({
   facilityId: propFacilityId,
   facilityName: propFacilityName,
 }) {
-  const { role, isAdmin } = useRole();
-  const { facility } = useAuth();
+  const { role, isAdmin, isSuperAdmin } = useRole();
+  const { facility, pharmacy } = useAuth();
 
   // Automatically detect current active facility
   const currentFacilityName = useMemo(() => {
-    return propFacilityName || facility?.name || "";
-  }, [propFacilityName, facility]);
+    return propFacilityName || pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [propFacilityName, pharmacy, facility]);
 
   const targetFacilityId = useMemo(() => {
-    return propFacilityId || facility?.id || null;
-  }, [propFacilityId, facility?.id]);
+    return propFacilityId || pharmacy?.id || facility?.id || null;
+  }, [propFacilityId, pharmacy?.id, facility?.id]);
 
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -201,8 +201,16 @@ function AuditLogs({
   }, [summaryMetrics, serverTotalElements]);
 
   // Server-filtered & paginated log records
-  const filteredLogs = logs;
-  const paginatedLogs = logs;
+  const filteredLogs = useMemo(() => {
+    if (isSuperAdmin) return logs;
+    return logs.filter(
+      (log) =>
+        log.userRole !== ROLES.SUPER_ADMIN &&
+        log.userRole?.toLowerCase() !== "superadmin" &&
+        log.userRole?.toLowerCase() !== "super admin",
+    );
+  }, [logs, isSuperAdmin]);
+  const paginatedLogs = filteredLogs;
   const totalPages = serverTotalPages || Math.ceil(filteredLogs.length / itemsPerPage) || 1;
 
   const handleSearchChange = (e) => {
@@ -307,7 +315,7 @@ function AuditLogs({
       `"${l.module || ""}"`,
       `"${l.severity || ""}"`,
       `"${l.target || ""}"`,
-      `"${l.facility || ""}"`,
+      `"${l.pharmacyName || l.facility || currentFacilityName || ""}"`,
       `"${(l.description || "").replace(/"/g, '""')}"`,
     ]);
 
@@ -697,7 +705,7 @@ function AuditLogs({
                         <div className="flex items-center gap-1 text-[11px] text-gray-500 mt-0.5">
                           <Building2 className="w-3 h-3 text-gray-400 shrink-0" />
                           <span className="truncate max-w-40">
-                            {log.facility}
+                            {log.pharmacyName || log.facility || currentFacilityName}
                           </span>
                         </div>
                       </td>
@@ -852,7 +860,7 @@ function AuditLogs({
                   <div className="flex items-center gap-2">
                     <span className="text-gray-500">Facility:</span>
                     <span className="font-semibold text-gray-800">
-                      {selectedLog.facility}
+                      {selectedLog.pharmacyName || selectedLog.facility || currentFacilityName}
                     </span>
                   </div>
                 </div>

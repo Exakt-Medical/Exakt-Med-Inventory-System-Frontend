@@ -1,9 +1,10 @@
 import { useState, useMemo } from "react";
-import { NavLink, useNavigate, useLocation } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   Boxes,
   LogOut,
   Building2,
+  Store,
   ArrowLeftRight,
   SlidersHorizontal,
   ShieldCheck,
@@ -43,8 +44,7 @@ const VIEW_MODES = [
 
 function Sidebar() {
   const navigate = useNavigate();
-  const location = useLocation();
-  const { user, facility, logout } = useAuth();
+  const { user, facility, pharmacy, logout } = useAuth();
   const { role: userRole, roleDetails: roleInfo, isSuperAdmin } = useRole();
 
   // Super Admin view switcher state (persisted in localStorage)
@@ -70,6 +70,10 @@ function Sidebar() {
 
   const handleSwitchFacility = () => {
     navigate("/select-facility");
+  };
+
+  const handleSwitchPharmacy = () => {
+    navigate("/select-pharmacy");
   };
 
   // Compute displayed navigation items
@@ -187,6 +191,33 @@ function Sidebar() {
               onClick={handleSwitchFacility}
               className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-100/80 transition-colors shrink-0 cursor-pointer"
               title="Switch Facility"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Active Pharmacy Widget */}
+        {pharmacy && (
+          <div className="flex items-center justify-between gap-2 p-2.5 rounded-xl bg-emerald-50/60 border border-emerald-100/80 text-xs">
+            <div className="min-w-0 flex items-center gap-2">
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 shrink-0">
+                <Store className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-700">
+                  Active Pharmacy
+                </p>
+                <p className="font-semibold text-gray-900 truncate text-xs">
+                  {pharmacy.pharmacyName || pharmacy.name}
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleSwitchPharmacy}
+              className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-100/80 transition-colors shrink-0 cursor-pointer"
+              title="Switch Pharmacy"
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
             </button>

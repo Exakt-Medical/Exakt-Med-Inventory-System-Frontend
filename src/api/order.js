@@ -13,8 +13,8 @@ const orderApi = {
     return `${API_URL}?${searchParams.toString()}`;
   },
 
-  getOrderSummary: (facilityId) => `${API_URL}/summary?facilityId=${facilityId}`,
-  getReceivableOrders: (facilityId) => `${API_URL}/receivable?facilityId=${facilityId}`,
+  getOrderSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
+  getReceivableOrders: (pharmacyId) => `${API_URL}/receivable?pharmacyId=${pharmacyId}`,
   getOrderById: (id) => `${API_URL}/${id}`,
   updateOrderStatus: (id) => `${API_URL}/${id}/status`,
 };

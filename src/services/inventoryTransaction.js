@@ -66,11 +66,11 @@ const normalizeTransactionEntry = (entry) => {
 
 const inventoryTransactionService = {
   /**
-   * Retrieves the complete historical inventory ledger (Bin Card) for a SKU in a facility.
+   * Retrieves the complete historical inventory ledger (Bin Card) for a SKU in a pharmacy.
    */
-  getLedger: async (skuId, facilityId, startDate, endDate, config = {}) => {
+  getLedger: async (skuId, pharmacyId, startDate, endDate, config = {}) => {
     const response = await axios.get(
-      inventoryTransactionApi.getLedger(skuId, facilityId, startDate, endDate),
+      inventoryTransactionApi.getLedger(skuId, pharmacyId, startDate, endDate),
       {
         ...config,
         headers: getAuthHeaders(config),
@@ -86,10 +86,10 @@ const inventoryTransactionService = {
   /**
    * Alias for getLedger for compatibility with existing Bin Card views.
    */
-  getSkuBinCard: async (skuId, facilityId, startDate, endDate, config = {}) => {
+  getSkuBinCard: async (skuId, pharmacyId, startDate, endDate, config = {}) => {
     return inventoryTransactionService.getLedger(
       skuId,
-      facilityId,
+      pharmacyId,
       startDate,
       endDate,
       config,
@@ -97,10 +97,10 @@ const inventoryTransactionService = {
   },
 
   /**
-   * Retrieves chronological transaction movements across the facility.
+   * Retrieves chronological transaction movements across the pharmacy.
    */
-  getTransactionsByFacility: async (
-    facilityId,
+  getTransactionsByPharmacy: async (
+    pharmacyId,
     types = [],
     page = 0,
     size = 10,
@@ -110,8 +110,8 @@ const inventoryTransactionService = {
     config = {},
   ) => {
     const response = await axios.get(
-      inventoryTransactionApi.getTransactionsByFacility(
-        facilityId,
+      inventoryTransactionApi.getTransactionsByPharmacy(
+        pharmacyId,
         types,
         page,
         size,
@@ -134,12 +134,8 @@ const inventoryTransactionService = {
     return list.map(normalizeTransactionEntry);
   },
 
-  /**
-   * Retrieves chronological transaction movements for a specific SKU.
-   */
-  getTransactionsBySku: async (
-    skuId,
-    facilityId,
+  getTransactionsByFacility: async (
+    pharmacyId,
     types = [],
     page = 0,
     size = 10,
@@ -148,15 +144,41 @@ const inventoryTransactionService = {
     sortDir = "DESC",
     config = {},
   ) => {
-    if (!facilityId) {
+    return inventoryTransactionService.getTransactionsByPharmacy(
+      pharmacyId,
+      types,
+      page,
+      size,
+      search,
+      sortBy,
+      sortDir,
+      config,
+    );
+  },
+
+  /**
+   * Retrieves chronological transaction movements for a specific SKU.
+   */
+  getTransactionsBySku: async (
+    skuId,
+    pharmacyId,
+    types = [],
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
+    if (!pharmacyId) {
       throw new Error(
-        "Facility ID is strictly required to fetch transactions by SKU.",
+        "Pharmacy ID is strictly required to fetch transactions by SKU.",
       );
     }
     const response = await axios.get(
       inventoryTransactionApi.getTransactionsBySku(
         skuId,
-        facilityId,
+        pharmacyId,
         types,
         page,
         size,
@@ -195,10 +217,10 @@ const inventoryTransactionService = {
   },
 
   /**
-   * Retrieves stock adjustment audit logs for a facility.
+   * Retrieves stock adjustment audit logs for a pharmacy.
    */
-  getAdjustmentLogsByFacility: async (
-    facilityId,
+  getAdjustmentLogsByPharmacy: async (
+    pharmacyId,
     page = 0,
     size = 10,
     search = "",
@@ -206,14 +228,14 @@ const inventoryTransactionService = {
     sortDir = "DESC",
     config = {},
   ) => {
-    if (!facilityId) {
+    if (!pharmacyId) {
       throw new Error(
-        "Facility ID is strictly required to fetch adjustment logs.",
+        "Pharmacy ID is strictly required to fetch adjustment logs.",
       );
     }
     const response = await axios.get(
-      inventoryTransactionApi.getAdjustmentLogsByFacility(
-        facilityId,
+      inventoryTransactionApi.getAdjustmentLogsByPharmacy(
+        pharmacyId,
         page,
         size,
         search,
@@ -233,6 +255,26 @@ const inventoryTransactionService = {
     }
     const list = Array.isArray(response.data) ? response.data : [];
     return list.map(normalizeTransactionEntry);
+  },
+
+  getAdjustmentLogsByFacility: async (
+    pharmacyId,
+    page = 0,
+    size = 10,
+    search = "",
+    sortBy = "createdAt",
+    sortDir = "DESC",
+    config = {},
+  ) => {
+    return inventoryTransactionService.getAdjustmentLogsByPharmacy(
+      pharmacyId,
+      page,
+      size,
+      search,
+      sortBy,
+      sortDir,
+      config,
+    );
   },
 
   /**
@@ -240,7 +282,7 @@ const inventoryTransactionService = {
    */
   getAdjustmentLogsBySku: async (
     skuId,
-    facilityId,
+    pharmacyId,
     page = 0,
     size = 10,
     search = "",
@@ -248,15 +290,15 @@ const inventoryTransactionService = {
     sortDir = "DESC",
     config = {},
   ) => {
-    if (!facilityId) {
+    if (!pharmacyId) {
       throw new Error(
-        "Facility ID is strictly required to fetch adjustment logs by SKU.",
+        "Pharmacy ID is strictly required to fetch adjustment logs by SKU.",
       );
     }
     const response = await axios.get(
       inventoryTransactionApi.getAdjustmentLogsBySku(
         skuId,
-        facilityId,
+        pharmacyId,
         page,
         size,
         search,
@@ -279,16 +321,16 @@ const inventoryTransactionService = {
   },
 
   /**
-   * Retrieves aggregated transaction KPI summary for a facility.
+   * Retrieves aggregated transaction KPI summary for a pharmacy.
    */
-  getTransactionSummary: async (facilityId, types = [], config = {}) => {
-    if (!facilityId) {
+  getTransactionSummary: async (pharmacyId, types = [], config = {}) => {
+    if (!pharmacyId) {
       throw new Error(
-        "Facility ID is strictly required to fetch transaction summary.",
+        "Pharmacy ID is strictly required to fetch transaction summary.",
       );
     }
     const response = await axios.get(
-      inventoryTransactionApi.getTransactionSummary(facilityId, types),
+      inventoryTransactionApi.getTransactionSummary(pharmacyId, types),
       {
         ...config,
         headers: getAuthHeaders(config),
@@ -298,16 +340,16 @@ const inventoryTransactionService = {
   },
 
   /**
-   * Retrieves aggregated stock adjustment KPI summary for a facility.
+   * Retrieves aggregated stock adjustment KPI summary for a pharmacy.
    */
-  getAdjustmentSummary: async (facilityId, config = {}) => {
-    if (!facilityId) {
+  getAdjustmentSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) {
       throw new Error(
-        "Facility ID is strictly required to fetch adjustment summary.",
+        "Pharmacy ID is strictly required to fetch adjustment summary.",
       );
     }
     const response = await axios.get(
-      inventoryTransactionApi.getAdjustmentSummary(facilityId),
+      inventoryTransactionApi.getAdjustmentSummary(pharmacyId),
       {
         ...config,
         headers: getAuthHeaders(config),
