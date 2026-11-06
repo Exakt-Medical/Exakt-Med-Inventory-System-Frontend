@@ -495,6 +495,8 @@ function SkuManagement() {
           status: filter || "ALL",
           page: Math.max(0, pageToFetch - 1),
           size: itemsPerPage,
+          sortBy: "genericName",
+          sortDir: "ASC",
         });
 
         if (data && Array.isArray(data.content)) {
@@ -2279,6 +2281,7 @@ function SkuManagement() {
                   setAdjustFormData((prev) => ({
                     ...prev,
                     reason: val,
+                    amount: String(val || "").toUpperCase() === "DISPENSED" && (prev.amount === 10 || prev.amount === "" || prev.amount === 0) ? 30 : prev.amount,
                   }));
                   clearError("batchId");
                 }}

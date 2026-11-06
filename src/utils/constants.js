@@ -129,7 +129,7 @@ export const DEFAULT_SKU_FORM_DATA = {
 
 export const DEFAULT_STOCK_ADJUSTMENT = {
   type: "SUBTRACT", // 'ADD' | 'SUBTRACT'
-  amount: 10,
+  amount: 30,
   reason: ADJUSTMENT_REASONS[0],
   notes: "",
   batchId: "",

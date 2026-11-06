@@ -31,6 +31,8 @@ const skuService = {
       params = {
         ...paramsOrPharmacyId,
         pharmacyId: paramsOrPharmacyId.pharmacyId,
+        sortBy: paramsOrPharmacyId.sortBy || "genericName",
+        sortDir: paramsOrPharmacyId.sortDir || "ASC",
       };
       delete params.facilityId;
     } else {
@@ -40,6 +42,8 @@ const skuService = {
         status: maybeStatus,
         page: maybePage,
         size: maybeSize,
+        sortBy: "genericName",
+        sortDir: "ASC",
       };
     }
 

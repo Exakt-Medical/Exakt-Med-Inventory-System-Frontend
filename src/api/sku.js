@@ -10,7 +10,7 @@ const skuApi = {
     stockFilter,
     page = 0,
     size = 10,
-    sortBy = "brandName",
+    sortBy = "genericName",
     sortDir = "ASC",
   }) => {
     let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
