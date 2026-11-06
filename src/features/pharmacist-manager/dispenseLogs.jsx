@@ -17,6 +17,7 @@ import {
   ShieldAlert,
   ArrowRight,
   Boxes,
+  UserCheck,
 } from "lucide-react";
 
 // Common Components
@@ -171,10 +172,13 @@ function DispenseLogs() {
         const genericMatch = (log.genericName || "")
           .toLowerCase()
           .includes(query);
-        const facilityMatch = (log.facilityName || "")
+        const facilityMatch = (log.facilityName || log.pharmacyName || "")
           .toLowerCase()
           .includes(query);
         const idMatch = String(log.id).includes(query);
+        const dispensedByMatch = (log.dispensedBy || "")
+          .toLowerCase()
+          .includes(query);
 
         return (
           patientMatch ||
@@ -183,6 +187,7 @@ function DispenseLogs() {
           brandMatch ||
           genericMatch ||
           facilityMatch ||
+          dispensedByMatch ||
           idMatch
         );
       }
@@ -378,7 +383,7 @@ function DispenseLogs() {
                 setSearchQuery("");
                 setCurrentPage(1);
               }}
-              placeholder="Search by patient, contact, medicine, brand..."
+              placeholder="Search by patient, contact, medicine, dispensed by..."
             />
           </div>
 
@@ -430,7 +435,7 @@ function DispenseLogs() {
 
         {/* Table Content */}
         {isLoading ? (
-          <SkeletonTable rows={6} columns={6} />
+          <SkeletonTable rows={6} columns={7} />
         ) : paginatedLogs.length === 0 ? (
           <div className="text-center py-16 px-4">
             <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center">
@@ -466,6 +471,7 @@ function DispenseLogs() {
                   <th className="px-4 py-3.5">Recipient Patient</th>
                   <th className="px-4 py-3.5">Medicine / SKU</th>
                   <th className="px-4 py-3.5 text-center">Units Dispensed</th>
+                  <th className="px-4 py-3.5">Dispensed By</th>
                   <th className="px-4 py-3.5">Dispensed At</th>
                   <th className="px-4 py-3.5">Status</th>
                   <th className="px-4 py-3.5 text-right">Action</th>
@@ -513,10 +519,10 @@ function DispenseLogs() {
                           <div className="text-xs text-slate-500 mt-0.5 line-clamp-1">
                             {log.genericName || log.skuName || "—"}
                           </div>
-                          {log.facilityName && (
+                          {(log.facilityName || log.pharmacyName) && (
                             <div className="text-[11px] text-slate-400 flex items-center gap-1 mt-0.5">
                               <Building2 className="w-3 h-3" />
-                              <span>{log.facilityName}</span>
+                              <span>{log.facilityName || log.pharmacyName}</span>
                             </div>
                           )}
                         </div>
@@ -527,6 +533,18 @@ function DispenseLogs() {
                         <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-indigo-50 text-indigo-700 border border-indigo-100">
                           {log.unitsDispensed || 0} units
                         </span>
+                      </td>
+
+                      {/* Dispensed By */}
+                      <td className="px-4 py-3.5">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-full bg-slate-100 text-slate-600 flex items-center justify-center font-semibold text-xs shrink-0">
+                            <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                          </div>
+                          <span className="font-medium text-slate-800 text-xs">
+                            {log.dispensedBy || "—"}
+                          </span>
+                        </div>
                       </td>
 
                       {/* Dispensed At */}
@@ -665,6 +683,12 @@ function DispenseLogs() {
                 <span className="text-slate-500">Quantity Dispensed:</span>
                 <span className="font-bold text-indigo-700">
                   {logToReceive.unitsDispensed} units
+                </span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-gray-100">
+                <span className="text-slate-500">Dispensed By:</span>
+                <span className="font-semibold text-slate-800">
+                  {logToReceive.dispensedBy || "—"}
                 </span>
               </div>
               <div className="flex justify-between items-center py-1">
@@ -814,7 +838,7 @@ function DispenseLogs() {
                     Dispensed Facility
                   </span>
                   <span className="text-sm font-medium text-slate-800">
-                    {selectedLog.facilityName || "—"}
+                    {selectedLog.facilityName || selectedLog.pharmacyName || "—"}
                   </span>
                 </div>
               </div>
@@ -826,7 +850,16 @@ function DispenseLogs() {
                 <Calendar className="w-3.5 h-3.5" />
                 Timeline
               </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl border border-gray-200 bg-slate-50/50">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 rounded-xl border border-gray-200 bg-slate-50/50">
+                <div>
+                  <span className="text-xs text-slate-400 block">
+                    Dispensed By
+                  </span>
+                  <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5 mt-0.5">
+                    <UserCheck className="w-3.5 h-3.5 text-slate-500" />
+                    {selectedLog.dispensedBy || "—"}
+                  </span>
+                </div>
                 <div>
                   <span className="text-xs text-slate-400 block">
                     Dispensed At
