@@ -19,6 +19,7 @@ import {
   RefreshCw,
   User,
   Phone,
+  UserPlus,
 } from "lucide-react";
 
 // Common Components
@@ -38,6 +39,7 @@ import skuService from "../../services/sku";
 import restockRequestService from "../../services/restockRequest";
 import batchService from "../../services/batch";
 import libPackagingUnitService from "../../services/libPackagingUnit";
+import patientService from "../../services/patient";
 
 // Constants Imports
 import {
@@ -385,12 +387,18 @@ function SkuManagement() {
   const [dropdownSkus, setDropdownSkus] = useState([]);
   const [isLoadingDropdownSkus, setIsLoadingDropdownSkus] = useState(false);
 
+  // Patient Selection & Inline Registration State for Dispense Adjustments
+  const [patients, setPatients] = useState([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [isNewPatient, setIsNewPatient] = useState(false);
+
   // Modal State: 'add' | 'view' | 'edit' | 'delete' | 'adjust' | 'restock' | null
   const [modalMode, setModalMode] = useState(null);
   const [selectedSku, setSelectedSku] = useState(null);
   const [formData, setFormData] = useState(DEFAULT_SKU_FORM_DATA);
   const [createdSkuInfo, setCreatedSkuInfo] = useState(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+  const [adjustSuccessInfo, setAdjustSuccessInfo] = useState(null);
   const [restockFormData, setRestockFormData] = useState(
     DEFAULT_RESTOCK_FORM_DATA,
   );
@@ -784,15 +792,99 @@ function SkuManagement() {
     setModalMode("delete");
   };
 
-  // --- BATCH MANAGEMENT ACTION OPENERS ---
+
+  const fetchPatients = useCallback(
+    async (pId) => {
+      const activePharmacyId =
+        pId || pharmacy?.id || selectedSku?.pharmacyId || targetPharmacyId;
+      if (!activePharmacyId) return;
+      try {
+        setIsLoadingPatients(true);
+        const data = await patientService.getAll(activePharmacyId);
+        setPatients(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error("Failed to load patients for pharmacy:", err);
+        setPatients([]);
+      } finally {
+        setIsLoadingPatients(false);
+      }
+    },
+    [pharmacy?.id, selectedSku?.pharmacyId, targetPharmacyId]
+  );
+
+  const handlePatientSelect = (patient) => {
+    if (!patient) {
+      setIsNewPatient(false);
+      setAdjustFormData((prev) => ({
+        ...prev,
+        patientId: "",
+        patientName: "",
+        contactNumber: "",
+      }));
+      return;
+    }
+    if (patient.id === "NEW") {
+      setIsNewPatient(true);
+      setAdjustFormData((prev) => ({
+        ...prev,
+        patientId: "NEW",
+        patientName: (patient.name || "").toUpperCase(),
+        contactNumber: "",
+      }));
+      clearError("patientName");
+      clearError("contactNumber");
+      return;
+    }
+    setIsNewPatient(false);
+    setAdjustFormData((prev) => ({
+      ...prev,
+      patientId: patient.id,
+      patientName: (patient.name || "").toUpperCase(),
+      contactNumber: patient.contactNumber || "",
+    }));
+    clearError("patientName");
+    clearError("contactNumber");
+  };
+
+  const handleSelectCreateNewPatient = (typedName) => {
+    const nameToUse = typedName?.trim().toUpperCase() || "";
+    setIsNewPatient(true);
+    setAdjustFormData((prev) => ({
+      ...prev,
+      patientId: "NEW",
+      patientName: nameToUse,
+      contactNumber: "",
+    }));
+    clearError("patientName");
+    clearError("contactNumber");
+  };
+
+  const patientOptions = useMemo(() => {
+    if (isNewPatient && adjustFormData.patientName) {
+      return [
+        {
+          id: "NEW",
+          name: (adjustFormData.patientName || "").toUpperCase(),
+          contactNumber: "New Patient Registration",
+          isNew: true,
+        },
+        ...patients,
+      ];
+    }
+    return patients;
+  }, [patients, isNewPatient, adjustFormData.patientName]);
+
+    // --- BATCH MANAGEMENT ACTION OPENERS ---
 
   const handleOpenAdjustModal = async (skuItem) => {
     setSelectedSku(skuItem);
+    setIsNewPatient(false);
     setAdjustFormData({
       ...DEFAULT_STOCK_ADJUSTMENT,
       batchId: "",
     });
     clearErrors();
+    fetchPatients(skuItem.pharmacyId || targetPharmacyId);
     setModalMode("adjust");
     setIsLoadingBatches(true);
     try {
@@ -847,6 +939,7 @@ function SkuManagement() {
 
   const handleCloseModal = () => {
     setModalMode(null);
+    setIsNewPatient(false);
     setSelectedSku(null);
     setRestockFormData(DEFAULT_RESTOCK_FORM_DATA);
     setAdjustFormData(DEFAULT_STOCK_ADJUSTMENT);
@@ -1183,8 +1276,8 @@ function SkuManagement() {
       if (!adjustFormData.patientName || !adjustFormData.patientName.trim()) {
         errors.patientName = "Patient name is required when dispensing medicine.";
       }
-      if (!adjustFormData.contactNumber || !adjustFormData.contactNumber.trim()) {
-        errors.contactNumber = "Patient contact number is required.";
+      if (isNewPatient && (!adjustFormData.contactNumber || !adjustFormData.contactNumber.trim())) {
+        errors.contactNumber = "Patient phone number is required to create new patient.";
       }
     }
 
@@ -1196,12 +1289,30 @@ function SkuManagement() {
     try {
       setIsSubmitting(true);
       clearErrors();
+
+      // If registering a new patient inline, save to backend
+      if (isDispensed && isNewPatient && adjustFormData.patientName?.trim()) {
+        const activePharmacyId =
+          pharmacy?.id || selectedSku?.pharmacyId || targetPharmacyId;
+        if (activePharmacyId) {
+          try {
+            const created = await patientService.create({
+              pharmacyId: Number(activePharmacyId),
+              name: adjustFormData.patientName.trim().toUpperCase(),
+              contactNumber: adjustFormData.contactNumber?.trim() || null,
+            });
+            setPatients((prev) => [created, ...prev]);
+          } catch (createErr) {
+            console.error("Failed to register new patient in background:", createErr);
+          }
+        }
+      }
       await skuService.adjustStock(selectedSku.id, {
         type: adjustFormData.type,
         amount: amt,
         reason: adjustFormData.reason,
         notes: adjustFormData.notes ? adjustFormData.notes.trim() : null,
-        patientName: isDispensed ? adjustFormData.patientName?.trim() : null,
+        patientName: isDispensed ? adjustFormData.patientName?.trim().toUpperCase() : null,
         contactNumber: isDispensed ? adjustFormData.contactNumber?.trim() : null,
         batchId:
           (adjustFormData.type === "ADD" ||
@@ -1211,9 +1322,26 @@ function SkuManagement() {
             : null,
       });
 
+      const adjustedItem = selectedSku;
+      const targetBatchObj = adjustFormData.batchId
+        ? skuBatches.find((b) => String(b.id) === String(adjustFormData.batchId))
+        : null;
+      const adjustmentDetail = {
+        sku: adjustedItem?.sku,
+        brandName: adjustedItem?.brandName,
+        genericName: adjustedItem?.genericName,
+        type: adjustFormData.type,
+        amount: amt,
+        reason: adjustFormData.reason,
+        patientName: isDispensed ? adjustFormData.patientName?.trim().toUpperCase() : null,
+        contactNumber: isDispensed ? adjustFormData.contactNumber?.trim() : null,
+        batchNum: targetBatchObj ? targetBatchObj.batchNum : null,
+      };
+
       await fetchSkus(currentPage, searchQuery, selectedStockFilter);
       await fetchSummary();
       handleCloseModal();
+      setAdjustSuccessInfo(adjustmentDetail);
     } catch (err) {
       console.error("Failed to adjust stock:", err);
       setFormErrors({
@@ -2317,64 +2445,108 @@ function SkuManagement() {
                       <span>Dispense Recipient Details</span>
                     </div>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div
+                      className={`grid grid-cols-1 ${
+                        Boolean(adjustFormData.patientId || isNewPatient)
+                          ? "sm:grid-cols-2"
+                          : ""
+                      } gap-3`}
+                    >
                       <div>
-                        <label
-                          htmlFor="sku-dispense-patient"
-                          className="block text-xs font-semibold text-gray-700 mb-1"
-                        >
-                          Patient Full Name <span className="text-red-500">*</span>
-                        </label>
-                        <input
+                        <ComboBox
                           id="sku-dispense-patient"
-                          type="text"
+                          name="patientId"
+                          label="Patient Full Name"
+                          labelClassName="normal-case tracking-normal mb-1"
                           required
-                          value={adjustFormData.patientName || ""}
-                          onChange={(e) => {
-                            setAdjustFormData((prev) => ({
-                              ...prev,
-                              patientName: e.target.value,
-                            }));
-                            clearError("patientName");
-                          }}
-                          placeholder="e.g. Juan Dela Cruz"
-                          className={`input ${formErrors.patientName ? "border-red-500 ring-1 ring-red-500" : ""}`}
+                          uppercase={true}
+                          options={patientOptions}
+                          value={adjustFormData.patientId || ""}
+                          placeholder="SELECT OR SEARCH PATIENT..."
+                          emptyText="No matching patients found"
+                          onChange={(e, selected) => handlePatientSelect(selected)}
+                          onSelect={(selected) => handlePatientSelect(selected)}
+                          onCreateNew={handleSelectCreateNewPatient}
+                          createNewText={(query) =>
+                            query
+                              ? `+ Create new patient "${query.toUpperCase()}"`
+                              : "+ Create new patient"
+                          }
+                          getOptionLabel={(p) => (p?.name || "").toUpperCase()}
+                          getOptionSubtext={(p) =>
+                            p?.isNew
+                              ? "New Patient" 
+                              : p?.contactNumber
+                                ? `Phone: ${p.contactNumber}`
+                                : "No phone number"
+                          }
+                          getDisplayValue={(p) => (p?.name || "").toUpperCase()}
+                          getOptionValue={(p) => p?.id}
+                          error={formErrors.patientName}
+                          isLoading={isLoadingPatients}
+                          loadingText="Loading patients..."
                         />
-                        {formErrors.patientName && (
-                          <p className="text-xs text-red-500 mt-1 font-medium">
-                            {formErrors.patientName}
+                        {isNewPatient && (
+                          <p className="text-[11px] text-emerald-700 font-medium mt-1 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+                            New patient profile will be registered automatically upon dispensing.
                           </p>
                         )}
                       </div>
 
-                      <div>
-                        <label
-                          htmlFor="sku-dispense-contact"
-                          className="block text-xs font-semibold text-gray-700 mb-1"
-                        >
-                          Contact Number <span className="text-red-500">*</span>
-                        </label>
-                        <input
-                          id="sku-dispense-contact"
-                          type="text"
-                          required
-                          value={adjustFormData.contactNumber || ""}
-                          onChange={(e) => {
-                            setAdjustFormData((prev) => ({
-                              ...prev,
-                              contactNumber: e.target.value,
-                            }));
-                            clearError("contactNumber");
-                          }}
-                          placeholder="e.g. 0917-123-4567"
-                          className={`input ${formErrors.contactNumber ? "border-red-500 ring-1 ring-red-500" : ""}`}
-                        />
-                        {formErrors.contactNumber && (
-                          <p className="text-xs text-red-500 mt-1 font-medium">
-                            {formErrors.contactNumber}
-                          </p>
-                        )}
-                      </div>
+                      {/* Reveal contact number field:
+                          - If creating patient: enabled for input
+                          - If existing patient selected: revealed but disabled
+                          - If neither: hidden (just one input field) */}
+                      {Boolean(adjustFormData.patientId || isNewPatient) && (
+                        <div>
+                          <label
+                            htmlFor="sku-dispense-contact"
+                            className="block text-xs font-semibold text-gray-700 mb-1"
+                          >
+                            {isNewPatient ? (
+                              <>
+                                Patient Phone Number <span className="text-red-500">*</span>
+                              </>
+                            ) : (
+                              "Contact Number (Registered)"
+                            )}
+                          </label>
+                          <input
+                            id="sku-dispense-contact"
+                            type="text"
+                            disabled={!isNewPatient}
+                            required={isNewPatient}
+                            value={adjustFormData.contactNumber || ""}
+                            onChange={(e) => {
+                              if (isNewPatient) {
+                                setAdjustFormData((prev) => ({
+                                  ...prev,
+                                  contactNumber: e.target.value,
+                                }));
+                                clearError("contactNumber");
+                              }
+                            }}
+                            placeholder={
+                              isNewPatient
+                                ? "e.g. 0917-123-4567"
+                                : "No contact number recorded"
+                            }
+                            className={`input ${
+                              !isNewPatient
+                                ? "bg-gray-100 text-gray-600 cursor-not-allowed border-gray-200"
+                                : formErrors.contactNumber
+                                  ? "border-red-500 ring-1 ring-red-500"
+                                  : ""
+                            }`}
+                          />
+                          {isNewPatient && formErrors.contactNumber && (
+                            <p className="text-xs text-red-500 mt-1 font-medium">
+                              {formErrors.contactNumber}
+                            </p>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2857,6 +3029,73 @@ function SkuManagement() {
           )
         }
         confirmText="Delete SKU"
+      />
+
+      {/* ======================================================== */}
+      {/* STOCK ADJUSTMENT SUCCESS MODAL                           */}
+      {/* ======================================================== */}
+      <SuccessModal
+        isOpen={Boolean(adjustSuccessInfo)}
+        onClose={() => setAdjustSuccessInfo(null)}
+        title="Stock Adjusted Successfully!"
+        message={
+          adjustSuccessInfo?.reason === "Dispensed"
+            ? `Successfully dispensed ${adjustSuccessInfo.amount} units to patient ${adjustSuccessInfo.patientName || "Recipient"}.`
+            : adjustSuccessInfo?.type === "ADD"
+              ? `Successfully added ${adjustSuccessInfo?.amount} units to inventory.`
+              : `Successfully deducted ${adjustSuccessInfo?.amount} units from inventory.`
+        }
+        details={
+          adjustSuccessInfo && (
+            <div className="space-y-1 text-xs">
+              <p>
+                <span className="font-semibold text-emerald-950">
+                  Medicine:
+                </span>{" "}
+                {adjustSuccessInfo.brandName} ({adjustSuccessInfo.genericName || adjustSuccessInfo.sku})
+              </p>
+              <p>
+                <span className="font-semibold text-emerald-950">
+                  Adjustment:
+                </span>{" "}
+                <span
+                  className={
+                    adjustSuccessInfo.type === "ADD"
+                      ? "text-emerald-700 font-bold"
+                      : "text-amber-800 font-bold"
+                  }
+                >
+                  {adjustSuccessInfo.type === "ADD"
+                    ? `+${adjustSuccessInfo.amount}`
+                    : `-${adjustSuccessInfo.amount}`}{" "}
+                  units
+                </span>{" "}
+                ({adjustSuccessInfo.reason})
+              </p>
+              {adjustSuccessInfo.batchNum && (
+                <p>
+                  <span className="font-semibold text-emerald-950">
+                    Target Batch:
+                  </span>{" "}
+                  #{adjustSuccessInfo.batchNum}
+                </p>
+              )}
+              {adjustSuccessInfo.patientName && (
+                <p>
+                  <span className="font-semibold text-emerald-950">
+                    Recipient Patient:
+                  </span>{" "}
+                  {adjustSuccessInfo.patientName}{" "}
+                  {adjustSuccessInfo.contactNumber
+                    ? `(${adjustSuccessInfo.contactNumber})`
+                    : ""}
+                </p>
+              )}
+            </div>
+          )
+        }
+        confirmText="Done"
+        autoCloseMs={3500}
       />
 
       {/* ======================================================== */}

@@ -18,6 +18,9 @@ import {
   ArrowRight,
   Boxes,
   UserCheck,
+  Users,
+  Edit2,
+  X,
 } from "lucide-react";
 
 // Common Components
@@ -31,6 +34,7 @@ import { SkeletonTable } from "../../components/common/skeleton";
 
 // Services & Hooks
 import dispensedLogService from "../../services/dispensedLog";
+import patientService from "../../services/patient";
 import useAuth from "../../hooks/useAuth";
 import useRole from "../../hooks/useRole";
 import { ROLES } from "../../config/roles";
@@ -84,6 +88,16 @@ function DispenseLogs() {
     message: "",
   });
 
+  // Patients Directory State
+  const [isPatientsModalOpen, setIsPatientsModalOpen] = useState(false);
+  const [patients, setPatients] = useState([]);
+  const [isLoadingPatients, setIsLoadingPatients] = useState(false);
+  const [patientSearchQuery, setPatientSearchQuery] = useState("");
+  const [editingPatientId, setEditingPatientId] = useState(null);
+  const [editFormData, setEditFormData] = useState({ name: "", contactNumber: "" });
+  const [isSavingPatient, setIsSavingPatient] = useState(false);
+  const [patientError, setPatientError] = useState(null);
+
   // Fetch all dispense logs
   const fetchLogs = useCallback(async () => {
     if (!isAuthorized) return;
@@ -111,7 +125,97 @@ function DispenseLogs() {
     fetchLogs();
   }, [fetchLogs]);
 
-  // Handle Mark as Received
+
+  // Fetch patients for directory modal
+  const fetchPatients = useCallback(async () => {
+    if (!targetPharmacyId) return;
+    try {
+      setIsLoadingPatients(true);
+      setPatientError(null);
+      const data = await patientService.getAll(targetPharmacyId);
+      setPatients(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load patients:", err);
+      setPatientError(
+        err.response?.data?.message ||
+          "Failed to load patients directory. Please try again."
+      );
+    } finally {
+      setIsLoadingPatients(false);
+    }
+  }, [targetPharmacyId]);
+
+  const handleOpenPatientsModal = () => {
+    setIsPatientsModalOpen(true);
+    setPatientSearchQuery("");
+    setEditingPatientId(null);
+    setPatientError(null);
+    fetchPatients();
+  };
+
+  const handleClosePatientsModal = () => {
+    setIsPatientsModalOpen(false);
+    setEditingPatientId(null);
+    setPatientError(null);
+  };
+
+  const handleStartEditPatient = (p) => {
+    setEditingPatientId(p.id);
+    setEditFormData({
+      name: (p.name || "").toUpperCase(),
+      contactNumber: p.contactNumber || "",
+    });
+    setPatientError(null);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingPatientId(null);
+    setEditFormData({ name: "", contactNumber: "" });
+    setPatientError(null);
+  };
+
+  const handleSaveEditPatient = async (id) => {
+    const trimmedName = editFormData.name?.trim().toUpperCase();
+    if (!trimmedName) {
+      setPatientError("Patient name is required.");
+      return;
+    }
+    try {
+      setIsSavingPatient(true);
+      setPatientError(null);
+      const updated = await patientService.update(id, {
+        pharmacyId: targetPharmacyId,
+        name: trimmedName,
+        contactNumber: editFormData.contactNumber?.trim() || null,
+      });
+
+      setPatients((prev) =>
+        prev.map((item) => (item.id === id ? updated : item))
+      );
+      setEditingPatientId(null);
+    } catch (err) {
+      console.error("Failed to update patient:", err);
+      setPatientError(
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to update patient. Please try again."
+      );
+    } finally {
+      setIsSavingPatient(false);
+    }
+  };
+
+  const filteredPatients = useMemo(() => {
+    if (!patientSearchQuery.trim()) return patients;
+    const q = patientSearchQuery.toLowerCase().trim();
+    return patients.filter((p) => {
+      const nameMatch = (p.name || "").toLowerCase().includes(q);
+      const phoneMatch = (p.contactNumber || "").toLowerCase().includes(q);
+      return nameMatch || phoneMatch;
+    });
+  }, [patients, patientSearchQuery]);
+
+    // Handle Mark as Received
   const handleMarkAsReceived = async () => {
     if (!logToReceive) return;
     try {
@@ -278,6 +382,16 @@ function DispenseLogs() {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={handleOpenPatientsModal}
+            className="btn-secondary flex items-center gap-2"
+            title="View and manage patients directory"
+          >
+            <Users className="w-4 h-4 text-blue-600" />
+            <span>Patients</span>
+          </button>
+
           <button
             type="button"
             onClick={fetchLogs}
@@ -893,7 +1007,185 @@ function DispenseLogs() {
         )}
       </Modal>
 
-      {/* Success Modal */}
+
+      {/* Patients Directory & Management Modal */}
+      <Modal
+        isOpen={isPatientsModalOpen}
+        onClose={handleClosePatientsModal}
+        title="Patients Directory"
+        size="2xl"
+      >
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex-1 max-w-md">
+              <SearchBar
+                value={patientSearchQuery}
+                onChange={(e) => setPatientSearchQuery(e.target.value)}
+                onClear={() => setPatientSearchQuery("")}
+                placeholder="Search patient by name or phone..."
+              />
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-slate-500 font-medium">
+                {filteredPatients.length} {filteredPatients.length === 1 ? "patient" : "patients"}
+              </span>
+              <button
+                type="button"
+                onClick={fetchPatients}
+                disabled={isLoadingPatients}
+                className="p-2 rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Refresh patients list"
+              >
+                <RefreshCw className={`w-4 h-4 ${isLoadingPatients ? "animate-spin" : ""}`} />
+              </button>
+            </div>
+          </div>
+
+          {patientError && (
+            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{patientError}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPatientError(null)}
+                className="text-rose-500 hover:text-rose-700 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {/* Patients Table */}
+          <div className="max-h-[55vh] overflow-y-auto rounded-xl border border-gray-200">
+            {isLoadingPatients ? (
+              <div className="p-8 text-center text-xs text-slate-500 flex flex-col items-center justify-center gap-2">
+                <Loader2 className="w-5 h-5 animate-spin text-blue-500" />
+                <span>Loading patients...</span>
+              </div>
+            ) : filteredPatients.length === 0 ? (
+              <div className="p-8 text-center text-xs text-slate-500">
+                {patientSearchQuery
+                  ? "No patients match your search criteria."
+                  : "No registered patients found for this pharmacy."}
+              </div>
+            ) : (
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-gray-200 bg-slate-50 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                    <th className="px-4 py-3">Patient Full Name</th>
+                    <th className="px-4 py-3">Contact Phone Number</th>
+                    <th className="px-4 py-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {filteredPatients.map((p) => {
+                    const isEditing = editingPatientId === p.id;
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="px-4 py-3">
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editFormData.name}
+                              onChange={(e) =>
+                                setEditFormData((prev) => ({
+                                  ...prev,
+                                  name: e.target.value.toUpperCase(),
+                                }))
+                              }
+                              className="input text-xs uppercase py-1.5 px-2.5 font-medium"
+                              placeholder="FULL NAME"
+                              autoFocus
+                            />
+                          ) : (
+                            <div className="font-bold text-slate-900 uppercase">
+                              {p.name}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {isEditing ? (
+                            <input
+                              type="text"
+                              value={editFormData.contactNumber}
+                              onChange={(e) =>
+                                setEditFormData((prev) => ({
+                                  ...prev,
+                                  contactNumber: e.target.value,
+                                }))
+                              }
+                              className="input text-xs py-1.5 px-2.5 font-medium"
+                              placeholder="e.g. 0917-123-4567"
+                            />
+                          ) : (
+                            <div className="text-slate-600 flex items-center gap-1.5">
+                              <Phone className="w-3.5 h-3.5 text-slate-400" />
+                              <span>{p.contactNumber || "—"}</span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleSaveEditPatient(p.id)}
+                                disabled={isSavingPatient}
+                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800 disabled:opacity-50 transition-colors cursor-pointer"
+                                title="Save changes"
+                              >
+                                {isSavingPatient ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Check className="w-3.5 h-3.5" />
+                                )}
+                                <span>Save</span>
+                              </button>
+                              <button
+                                type="button"
+                                onClick={handleCancelEdit}
+                                disabled={isSavingPatient}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                                title="Cancel edit"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleStartEditPatient(p)}
+                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
+                              title="Edit patient details"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                              <span>Edit</span>
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={handleClosePatientsModal}
+              className="btn-secondary text-xs"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+            {/* Success Modal */}
       <SuccessModal
         isOpen={successInfo.isOpen}
         onClose={() => setSuccessInfo({ isOpen: false, message: "" })}

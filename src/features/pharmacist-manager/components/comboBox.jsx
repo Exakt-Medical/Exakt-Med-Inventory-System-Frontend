@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { ChevronDown, Check, X, Loader2 } from "lucide-react";
+import { ChevronDown, Check, X, Loader2, Plus } from "lucide-react";
 
 /**
  * Reusable Traditional ComboBox Component
@@ -39,6 +39,10 @@ function ComboBox({
   getOptionSubtext = (opt) => opt?.dosage ?? opt?.description ?? opt?.subtext ?? "",
   getDisplayValue,
   renderOption,
+  emptyText = "No matching options found",
+  onCreateNew,
+  createNewText,
+  uppercase = false,
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -146,7 +150,10 @@ function ComboBox({
   }, [highlightedIndex, isOpen]);
 
   const handleInputChange = (e) => {
-    const nextVal = e.target.value;
+    let nextVal = e.target.value;
+    if (uppercase) {
+      nextVal = nextVal.toUpperCase();
+    }
     setInputValue(nextVal);
     setIsSearching(true);
     setIsOpen(true);
@@ -255,6 +262,10 @@ function ComboBox({
           highlightedIndex < filteredOptions.length
         ) {
           handleSelect(filteredOptions[highlightedIndex]);
+        } else if (onCreateNew && inputValue.trim()) {
+          setIsOpen(false);
+          setIsSearching(false);
+          onCreateNew(inputValue.trim());
         }
         break;
       case "Escape":
@@ -308,7 +319,7 @@ function ComboBox({
           onChange={handleInputChange}
           onFocus={handleFocus}
           onKeyDown={handleKeyDown}
-          className={`input pr-16 bg-white text-sm ${inputClassName} ${
+          className={`input pr-16 bg-white text-sm ${uppercase ? "uppercase" : ""} ${inputClassName} ${
             disabled ? "opacity-50 cursor-not-allowed bg-gray-50" : ""
           } ${
             error
@@ -414,7 +425,29 @@ function ComboBox({
               })
             ) : (
               <li className="px-4 py-6 text-center text-xs text-gray-400">
-                No matching medicines found
+                {emptyText}
+              </li>
+            )}
+
+            {onCreateNew && !disabled && (
+              <li
+                role="option"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsOpen(false);
+                  setIsSearching(false);
+                  onCreateNew(inputValue.trim());
+                }}
+                className="px-3.5 py-2.5 flex items-center gap-2 cursor-pointer transition-colors text-blue-600 hover:bg-blue-50 font-semibold text-xs border-t border-gray-100 bg-blue-50/20"
+              >
+                <Plus className="w-3.5 h-3.5 shrink-0 text-blue-600" />
+                <span className="truncate">
+                  {typeof createNewText === "function"
+                    ? createNewText(inputValue.trim())
+                    : createNewText ||
+                      `+ Create new patient${inputValue.trim() ? ` \"${inputValue.trim()}\"` : ""}`}
+                </span>
               </li>
             )}
           </ul>

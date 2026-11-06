@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { X } from "lucide-react";
 
-function Modal({ isOpen, onClose, title, children, size = "md", className = "" }) {
+function Modal({ isOpen, onClose, title, children, size = "md", className = "", zIndex = "z-50" }) {
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e) => {
@@ -34,7 +34,7 @@ function Modal({ isOpen, onClose, title, children, size = "md", className = "" }
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className={`fixed inset-0 ${zIndex} flex items-center justify-center p-4`}
       aria-modal="true"
       role="dialog"
     >
