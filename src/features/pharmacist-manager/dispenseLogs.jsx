@@ -52,16 +52,16 @@ const formatDate = (dateStr) => {
 };
 
 function DispenseLogs() {
-  const { facility, user } = useAuth();
+  const { facility, pharmacy, user } = useAuth();
   const { isSuperAdmin, isPharmacist } = useRole();
 
   // Access validation: Strictly for SuperAdmin and Pharmacist
   const isAuthorized = isSuperAdmin || isPharmacist;
 
-  const targetFacilityId = useMemo(() => {
+  const targetPharmacyId = useMemo(() => {
     // If pharmacist, restrict to facility. If superadmin without facility selected, can be null (all)
-    return facility?.id || null;
-  }, [facility]);
+    return pharmacy?.id || null;
+  }, [pharmacy]);
 
   // State Management
   const [logs, setLogs] = useState([]);
@@ -91,7 +91,7 @@ function DispenseLogs() {
       setError(null);
       // Fetch logs for current facility (or all if super admin and no facility specified)
       const data = await dispensedLogService.getAll(
-        targetFacilityId,
+        targetPharmacyId,
         selectedStatus === "ALL" ? null : selectedStatus,
       );
       setLogs(Array.isArray(data) ? data : []);
@@ -104,7 +104,7 @@ function DispenseLogs() {
     } finally {
       setIsLoading(false);
     }
-  }, [isAuthorized, targetFacilityId, selectedStatus]);
+  }, [isAuthorized, targetPharmacyId, selectedStatus]);
 
   useEffect(() => {
     fetchLogs();

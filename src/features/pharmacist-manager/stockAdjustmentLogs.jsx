@@ -86,15 +86,15 @@ const getAdjustmentBadge = (type) => {
 };
 
 function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
 
   const currentFacilityName = useMemo(() => {
     return facility?.name || "";
-  }, [facility]);
+  }, [pharmacy]);
 
-  const targetFacilityId = useMemo(() => {
-    return facility?.id || null;
-  }, [facility]);
+  const targetPharmacyId = useMemo(() => {
+    return pharmacy?.id || null;
+  }, [pharmacy]);
 
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -133,11 +133,11 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
 
   const fetchSummary = useCallback(async () => {
-    if (!targetFacilityId) return;
+    if (!targetPharmacyId) return;
     try {
       setIsSummaryLoading(true);
       const summary =
-        await inventoryTransactionService.getAdjustmentSummary(targetFacilityId);
+        await inventoryTransactionService.getAdjustmentSummary(targetPharmacyId);
       if (summary) {
         setSummaryMetrics(summary);
       }
@@ -146,7 +146,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     } finally {
       setIsSummaryLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [targetPharmacyId]);
 
   useEffect(() => {
     fetchSummary();
@@ -154,7 +154,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
 
   // Fetch adjustment logs from backend API
   const fetchLogs = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setLogs([]);
       return;
     }
@@ -163,7 +163,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
       setError(null);
       const data =
         await inventoryTransactionService.getAdjustmentLogsByFacility(
-          targetFacilityId,
+          targetPharmacyId,
           currentPage - 1,
           itemsPerPage,
           debouncedSearchQuery,
@@ -191,7 +191,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     } finally {
       setIsLoading(false);
     }
-  }, [targetFacilityId, currentPage, itemsPerPage, debouncedSearchQuery]);
+  }, [targetPharmacyId, currentPage, itemsPerPage, debouncedSearchQuery]);
 
   useEffect(() => {
     fetchLogs();
@@ -885,7 +885,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                 </span>
                 <span className="font-semibold text-gray-800 text-sm mt-0.5 block">
                   {selectedLog.facilityName || currentFacilityName} (ID:{" "}
-                  {selectedLog.facilityId || targetFacilityId})
+                  {selectedLog.pharmacyId || targetPharmacyId})
                 </span>
               </div>
             </div>

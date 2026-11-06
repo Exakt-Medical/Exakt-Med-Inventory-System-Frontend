@@ -67,11 +67,10 @@ export default function LocationManagementModal({
   isOpen,
   onClose,
   pharmacyId,
-  facilityId,
   onLocationCreated,
   initialView = "list", // 'list' or 'create'
 }) {
-  const targetPharmacyId = pharmacyId ?? facilityId;
+  const targetPharmacyId = pharmacyId;
   const [activeTab, setActiveTab] = useState(initialView);
   const [locations, setLocations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);

@@ -76,7 +76,7 @@ function BatchManagement() {
     return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
   }, [pharmacy, facility]);
 
-  const activeFacilityId = useMemo(() => {
+  const activePharmacyId = useMemo(() => {
     return pharmacy?.id || null;
   }, [pharmacy]);
 
@@ -182,11 +182,11 @@ function BatchManagement() {
   const [relocateError, setRelocateError] = useState("");
 
   const fetchLocations = useCallback(async () => {
-    if (!activeFacilityId) return;
+    if (!activePharmacyId) return;
     try {
       setIsLocationsLoading(true);
       const data = await libLocationService.getAllLocations({
-        pharmacyId: activeFacilityId,
+        pharmacyId: activePharmacyId,
         activeOnly: true,
       });
       setLocationsList(Array.isArray(data) ? data : []);
@@ -195,7 +195,7 @@ function BatchManagement() {
     } finally {
       setIsLocationsLoading(false);
     }
-  }, [activeFacilityId]);
+  }, [activePharmacyId]);
 
   useEffect(() => {
     fetchLocations();
@@ -311,7 +311,7 @@ function BatchManagement() {
         status: po.status || "Approved",
         supplierName: po.supplierName || "Supplier",
         targetFacility: po.pharmacyName || po.facilityName || currentFacilityName,
-        facilityId: po.pharmacyId ?? po.facilityId,
+        facilityId: po.facilityId,
         pharmacyId: po.pharmacyId,
         totalQuantity: totalOrdered,
         totalReceivedUnits: totalReceived,
@@ -334,14 +334,14 @@ function BatchManagement() {
   );
 
   const fetchApprovedOrders = useCallback(async () => {
-    if (!activeFacilityId) {
+    if (!activePharmacyId) {
       setApprovedOrders([]);
       return;
     }
     try {
       setIsOrdersLoading(true);
       setOrdersError(null);
-      const data = await orderService.getReceivableOrders(activeFacilityId);
+      const data = await orderService.getReceivableOrders(activePharmacyId);
       if (Array.isArray(data)) {
         setApprovedOrders(
           data
@@ -365,7 +365,7 @@ function BatchManagement() {
     } finally {
       setIsOrdersLoading(false);
     }
-  }, [activeFacilityId, normalizeApprovedOrder]);
+  }, [activePharmacyId, normalizeApprovedOrder]);
 
   useEffect(() => {
     fetchApprovedOrders();
@@ -391,7 +391,7 @@ function BatchManagement() {
         locationId: dto.locationId,
         locationCode: dto.locationCode,
         locationStorageType: dto.locationStorageType,
-        facilityId: dto.pharmacyId ?? dto.facilityId,
+        facilityId: dto.facilityId,
         pharmacyId: dto.pharmacyId,
         poReference:
           dto.poNumber ||
@@ -414,15 +414,15 @@ function BatchManagement() {
 
   // Fetch aggregate KPIs and distinct SKUs for active facility
   const fetchSummaryAndSkus = useCallback(async () => {
-    if (!activeFacilityId) {
+    if (!activePharmacyId) {
       setIsSummaryLoading(false);
       return;
     }
     try {
       setIsSummaryLoading(true);
       const [summaryData, skusData] = await Promise.all([
-        batchService.getBatchSummary(activeFacilityId),
-        batchService.getDistinctBatchSkus(activeFacilityId),
+        batchService.getBatchSummary(activePharmacyId),
+        batchService.getDistinctBatchSkus(activePharmacyId),
       ]);
       if (summaryData) {
         setBatchSummary(summaryData);
@@ -435,11 +435,11 @@ function BatchManagement() {
     } finally {
       setIsSummaryLoading(false);
     }
-  }, [activeFacilityId]);
+  }, [activePharmacyId]);
 
   // Fetch paginated batches for active facility from backend
   const fetchBatches = useCallback(async () => {
-    if (!activeFacilityId) {
+    if (!activePharmacyId) {
       setBatchList([]);
       setTotalElements(0);
       setTotalPages(1);
@@ -449,7 +449,7 @@ function BatchManagement() {
       setIsBatchesLoading(true);
       setBatchesError(null);
       const pageData = await batchService.getBatchesPaginated({
-        pharmacyId: activeFacilityId,
+        pharmacyId: activePharmacyId,
         search: searchQuery.trim(),
         sku: selectedSkuFilter,
         status: selectedStatusFilter,
@@ -481,7 +481,7 @@ function BatchManagement() {
       setIsBatchesLoading(false);
     }
   }, [
-    activeFacilityId,
+    activePharmacyId,
     searchQuery,
     selectedSkuFilter,
     selectedStatusFilter,
@@ -869,7 +869,7 @@ function BatchManagement() {
       return;
     }
 
-    if (!activeFacilityId) {
+    if (!activePharmacyId) {
       setFormErrors({
         poNumber:
           "Operating facility could not be determined. Please re-select your active facility.",
@@ -890,7 +890,7 @@ function BatchManagement() {
           if (units > 0 && b.batchNumber?.trim()) {
             const isQuar = Boolean(b.isQuarantined);
             batchPayload.push({
-              pharmacyId: activeFacilityId,
+              pharmacyId: activePharmacyId,
               orderedItemId: item.orderedItemId || item.id,
               batchNum: b.batchNumber.trim().toUpperCase(),
               units: units,
@@ -2788,8 +2788,8 @@ function BatchManagement() {
           setIsLocationModalOpen(false);
           setQuickAddTarget(null);
         }}
-        pharmacyId={activeFacilityId}
-        facilityId={activeFacilityId}
+        pharmacyId={activePharmacyId}
+
         onLocationCreated={handleLocationCreated}
         initialView={locationModalInitialView}
       />

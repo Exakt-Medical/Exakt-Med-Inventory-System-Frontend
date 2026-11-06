@@ -19,7 +19,7 @@ const orderService = {
   },
 
   getOrdersPaginated: async (params, config = {}) => {
-    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    const pharmacyId = params?.pharmacyId;
     if (!pharmacyId) {
       throw new Error("Pharmacy ID is required to fetch orders.");
     }

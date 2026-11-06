@@ -56,20 +56,20 @@ const AUDIT_SEVERITIES = [
 ];
 
 function AuditLogs({
-  facilityId: propFacilityId,
-  facilityName: propFacilityName,
+  pharmacyId: propPharmacyId,
+  pharmacyName: propPharmacyName,
 }) {
   const { role, isAdmin, isSuperAdmin } = useRole();
   const { facility, pharmacy } = useAuth();
 
   // Automatically detect current active facility
   const currentFacilityName = useMemo(() => {
-    return propFacilityName || pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
-  }, [propFacilityName, pharmacy, facility]);
+    return propPharmacyName || pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
+  }, [propPharmacyName, pharmacy, facility]);
 
-  const targetFacilityId = useMemo(() => {
-    return propFacilityId || pharmacy?.id || facility?.id || null;
-  }, [propFacilityId, pharmacy?.id, facility?.id]);
+  const targetPharmacyId = useMemo(() => {
+    return propPharmacyId || pharmacy?.id || null;
+  }, [propPharmacyId, pharmacy?.id]);
 
   const [logs, setLogs] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -104,10 +104,10 @@ function AuditLogs({
   const [isSummaryLoading, setIsSummaryLoading] = useState(true);
 
   const fetchSummary = useCallback(async () => {
-    if (!targetFacilityId) return;
+    if (!targetPharmacyId) return;
     try {
       setIsSummaryLoading(true);
-      const summary = await auditLogService.getAuditLogSummary(targetFacilityId);
+      const summary = await auditLogService.getAuditLogSummary(targetPharmacyId);
       if (summary) {
         setSummaryMetrics(summary);
       }
@@ -116,7 +116,7 @@ function AuditLogs({
     } finally {
       setIsSummaryLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [targetPharmacyId]);
 
   useEffect(() => {
     fetchSummary();
@@ -124,7 +124,7 @@ function AuditLogs({
 
   // Fetch logs from backend
   const fetchLogs = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setLogs([]);
       setIsLoading(false);
       return;
@@ -133,7 +133,7 @@ function AuditLogs({
       setIsLoading(true);
       setError(null);
       const data = await auditLogService.getAuditLogs(
-        targetFacilityId,
+        targetPharmacyId,
         selectedModule,
         selectedSeverity,
         debouncedSearchQuery,
@@ -167,7 +167,7 @@ function AuditLogs({
       setIsLoading(false);
     }
   }, [
-    targetFacilityId,
+    targetPharmacyId,
     selectedModule,
     selectedSeverity,
     debouncedSearchQuery,

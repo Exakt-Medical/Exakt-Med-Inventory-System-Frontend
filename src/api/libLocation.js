@@ -5,7 +5,7 @@ const libLocationApi = {
   createLocation: `${API_URL}`,
   getAllLocations: (params = {}) => {
     const query = new URLSearchParams();
-    const pharmacyId = params.pharmacyId ?? params.facilityId;
+    const pharmacyId = params.pharmacyId;
     if (pharmacyId) query.append("pharmacyId", pharmacyId);
     if (params.activeOnly !== undefined && params.activeOnly !== null) {
       query.append("activeOnly", params.activeOnly);

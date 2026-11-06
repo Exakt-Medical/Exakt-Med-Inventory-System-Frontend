@@ -11,12 +11,13 @@ const getAuthHeaders = (config = {}) => {
 
 const batchService = {
   getBatchesPaginated: async (params, config = {}) => {
-    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    const pharmacyId = params?.pharmacyId;
     if (!pharmacyId) {
       throw new Error("Pharmacy ID is required to fetch batches.");
     }
+    const { facilityId, ...cleanParams } = params || {};
     const response = await axios.get(
-      batchApi.getBatchesPaginated({ ...params, pharmacyId }),
+      batchApi.getBatchesPaginated({ ...cleanParams, pharmacyId }),
       {
         ...config,
         headers: getAuthHeaders(config),

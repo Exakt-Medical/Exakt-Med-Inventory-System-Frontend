@@ -330,7 +330,7 @@ const mapDtoToSku = (dto) => {
     maximumLevel: Number(dto.maximumLevel ?? 0),
     pharmacyId: dto.pharmacyId,
     pharmacy: dto.pharmacyName || "",
-    facilityId: dto.pharmacyId ?? dto.facilityId,
+    facilityId: dto.facilityId,
     facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
     pendingUnits: Number(dto.pendingUnits || 0),
@@ -357,7 +357,7 @@ function SkuManagement() {
     return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
   }, [pharmacy, facility]);
 
-  const targetFacilityId = useMemo(() => {
+  const targetPharmacyId = useMemo(() => {
     return pharmacy?.id || null;
   }, [pharmacy]);
 
@@ -430,7 +430,7 @@ function SkuManagement() {
 
   // Fetch KPI Summary metrics
   const fetchSummary = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setSummaryData({
         totalSkus: 0,
         optimalCount: 0,
@@ -441,7 +441,7 @@ function SkuManagement() {
     }
     try {
       setIsLoadingSummary(true);
-      const summary = await skuService.getSkuSummary(targetFacilityId);
+      const summary = await skuService.getSkuSummary(targetPharmacyId);
       if (summary) {
         setSummaryData({
           totalSkus: Number(summary.totalSkus || 0),
@@ -455,17 +455,17 @@ function SkuManagement() {
     } finally {
       setIsLoadingSummary(false);
     }
-  }, [targetFacilityId]);
+  }, [targetPharmacyId]);
 
   // Fetch dropdown SKUs for Restock modal
   const fetchDropdownSkus = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setDropdownSkus([]);
       return;
     }
     try {
       setIsLoadingDropdownSkus(true);
-      const data = await skuService.getDropdownSkus(targetFacilityId);
+      const data = await skuService.getDropdownSkus(targetPharmacyId);
       setDropdownSkus(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error("Failed to load dropdown SKUs:", err);
@@ -473,7 +473,7 @@ function SkuManagement() {
     } finally {
       setIsLoadingDropdownSkus(false);
     }
-  }, [targetFacilityId]);
+  }, [targetPharmacyId]);
 
   // Fetch paginated SKUs from backend API
   const fetchSkus = useCallback(
@@ -482,7 +482,7 @@ function SkuManagement() {
         setIsLoadingSkus(true);
         setSkuError(null);
 
-        if (!targetFacilityId) {
+        if (!targetPharmacyId) {
           setSkuList([]);
           setTotalPages(1);
           setTotalElements(0);
@@ -490,7 +490,7 @@ function SkuManagement() {
         }
 
         const data = await skuService.getSkusPaginated({
-          pharmacyId: targetFacilityId,
+          pharmacyId: targetPharmacyId,
           search: query ? query.trim() : "",
           status: filter || "ALL",
           page: Math.max(0, pageToFetch - 1),
@@ -518,7 +518,7 @@ function SkuManagement() {
         setIsLoadingSkus(false);
       }
     },
-    [targetFacilityId, itemsPerPage],
+    [targetPharmacyId, itemsPerPage],
   );
 
   // Fetch summary when facility changes
@@ -592,7 +592,7 @@ function SkuManagement() {
     try {
       const data = await batchService.getBatchesBySku(
         skuItem.id,
-        targetFacilityId,
+        targetPharmacyId,
       );
       const todayStr = new Date().toISOString().split("T")[0];
       const expired = (Array.isArray(data) ? data : []).filter((b) => {
@@ -613,7 +613,7 @@ function SkuManagement() {
 
   // Handler to manually process/deduct expired batches for a specific SKU
   const handleProcessExpiredBatches = async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setSkuError("Facility is required to process expired batches.");
       return;
     }
@@ -626,7 +626,7 @@ function SkuManagement() {
     setIsConfirmExpiredModalOpen(false);
     try {
       const result = await batchService.processExpiredBatches(
-        targetFacilityId,
+        targetPharmacyId,
         skuToDeduct.id,
       );
       const count =
@@ -796,7 +796,7 @@ function SkuManagement() {
     try {
       const data = await batchService.getBatchesBySku(
         skuItem.id,
-        targetFacilityId,
+        targetPharmacyId,
       );
       const todayStr = new Date().toISOString().split("T")[0];
       const available = (Array.isArray(data) ? data : [])
@@ -883,10 +883,10 @@ function SkuManagement() {
 
     try {
       setIsRestockSubmitting(true);
-      const targetFacilityIdToUse =
-        pharmacy?.id || selectedSku?.pharmacyId || selectedSku?.facilityId || targetFacilityId;
+      const targetPharmacyIdToUse =
+        pharmacy?.id || selectedSku?.pharmacyId || targetPharmacyId;
 
-      if (!targetFacilityIdToUse) {
+      if (!targetPharmacyIdToUse) {
         setFormErrors({
           skuId:
             "Active pharmacy could not be determined. Please re-select your operating pharmacy.",
@@ -896,7 +896,7 @@ function SkuManagement() {
 
       const payload = {
         skuId: Number(restockFormData.skuId),
-        pharmacyId: Number(targetFacilityIdToUse),
+        pharmacyId: Number(targetPharmacyIdToUse),
         requestedUnits: units,
         reason: restockFormData.reason ? restockFormData.reason.trim() : null,
       };
@@ -990,10 +990,10 @@ function SkuManagement() {
       return;
     }
 
-    const targetFacilityIdToSave =
-      pharmacy?.id || selectedSku?.pharmacyId || selectedSku?.facilityId || targetFacilityId;
+    const targetPharmacyIdToSave =
+      pharmacy?.id || selectedSku?.pharmacyId || targetPharmacyId;
 
-    if (!targetFacilityIdToSave) {
+    if (!targetPharmacyIdToSave) {
       setFormErrors({
         sku: "Active operating pharmacy could not be determined. Please ensure you are logged into a valid pharmacy.",
       });
@@ -1004,7 +1004,7 @@ function SkuManagement() {
     try {
       if (modalMode === "add") {
         const payload = {
-          pharmacyId: Number(targetFacilityIdToSave),
+          pharmacyId: Number(targetPharmacyIdToSave),
           medicineId: Number(formData.medicineId),
           name: formData.sku ? formData.sku.trim().toUpperCase() : undefined,
           brandName: formData.brandName.trim().toUpperCase(),
@@ -1037,7 +1037,7 @@ function SkuManagement() {
         await fetchSummary();
         return;
       } else if (modalMode === "edit" && selectedSku) {
-        const editFacilityId = selectedSku.pharmacyId || selectedSku.facilityId || targetFacilityIdToSave;
+        const editPharmacyId = selectedSku.pharmacyId || targetPharmacyIdToSave;
 
         const editMedicineId = formData.medicineId || selectedSku.medicineId;
         if (!editMedicineId) {
@@ -1048,7 +1048,7 @@ function SkuManagement() {
         }
 
         const payload = {
-          pharmacyId: Number(editFacilityId),
+          pharmacyId: Number(editPharmacyId),
           medicineId: Number(editMedicineId),
           brandName: formData.brandName.trim().toUpperCase(),
           packagingUnitCode: formData.packagingUnitCode || undefined,

@@ -116,7 +116,7 @@ const mapDtoToSku = (dto) => {
     maximumLevel: Number(dto.maximumLevel ?? 0),
     pharmacyId: dto.pharmacyId,
     pharmacy: dto.pharmacyName || "",
-    facilityId: dto.pharmacyId ?? dto.facilityId,
+    facilityId: dto.facilityId,
     facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
     createdAt: dto.createdAt
@@ -134,7 +134,7 @@ function OrderRequest() {
     return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
   }, [pharmacy, facility]);
 
-  const targetFacilityId = useMemo(() => {
+  const targetPharmacyId = useMemo(() => {
     return pharmacy?.id || null;
   }, [pharmacy]);
 
@@ -159,13 +159,13 @@ function OrderRequest() {
         setIsLoadingSkus(true);
         setSkuError(null);
 
-        if (!targetFacilityId) {
+        if (!targetPharmacyId) {
           setSkuList([]);
           return;
         }
 
         const data = await skuService.getReorderNeededSkus(
-          targetFacilityId,
+          targetPharmacyId,
           query ? query.trim() : "",
         );
 
@@ -183,7 +183,7 @@ function OrderRequest() {
         setIsLoadingSkus(false);
       }
     },
-    [targetFacilityId, currentFacilityName],
+    [targetPharmacyId, currentFacilityName],
   );
 
   const initialSkuFetchDone = useRef(false);
@@ -236,9 +236,9 @@ function OrderRequest() {
 
   // Filter SKUs that reference the current active facility
   const currentFacilitySkus = useMemo(() => {
-    if (!targetFacilityId) return [];
-    return skuList.filter((s) => s.facilityId === targetFacilityId);
-  }, [skuList, targetFacilityId]);
+    if (!targetPharmacyId) return [];
+    return skuList.filter((s) => s.pharmacyId === targetPharmacyId);
+  }, [skuList, targetPharmacyId]);
 
   // Multi-Selection State for Table Checkboxes
   const [selectedSkuIds, setSelectedSkuIds] = useState([]);
@@ -258,7 +258,7 @@ function OrderRequest() {
 
   // Fetch Restock Requests from backend API (Pending only - awaiting PO creation)
   const fetchRestockRequests = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setRestockRequests([]);
       return;
     }
@@ -267,7 +267,7 @@ function OrderRequest() {
       setRestockRequestError(null);
 
       const data = await restockRequestService.getAllRestockRequests(
-        targetFacilityId,
+        targetPharmacyId,
         true, // pendingOnly = true
       );
 
@@ -285,7 +285,7 @@ function OrderRequest() {
     } finally {
       setIsLoadingRestockRequests(false);
     }
-  }, [targetFacilityId, currentFacilityName]);
+  }, [targetPharmacyId, currentFacilityName]);
 
   useEffect(() => {
     fetchRestockRequests();
@@ -834,9 +834,9 @@ function OrderRequest() {
       (s) => s.id === Number(orderForm.supplierId),
     );
 
-    const targetFacilityIdToSave = pharmacy?.id || targetFacilityId;
+    const targetPharmacyIdToSave = pharmacy?.id || targetPharmacyId;
 
-    if (!targetFacilityIdToSave) {
+    if (!targetPharmacyIdToSave) {
       setFormErrors({
         supplierId:
           "Operating pharmacy could not be determined. Please re-select your pharmacy.",
@@ -845,7 +845,7 @@ function OrderRequest() {
     }
 
     const orderPayload = {
-      pharmacyId: Number(targetFacilityIdToSave),
+      pharmacyId: Number(targetPharmacyIdToSave),
       supplierId: Number(orderForm.supplierId),
       priority: orderForm.priority || "Normal",
       totalPrice: Math.round(computedTotalCost),

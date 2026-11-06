@@ -55,12 +55,12 @@ const TRANSACTION_TYPES = [
 function BinCard() {
   const { skuId: urlSkuId } = useParams();
   const navigate = useNavigate();
-  const { facility } = useAuth();
+  const { facility, pharmacy } = useAuth();
   const { isSuperAdmin } = useRole();
 
   // Facility scope
-  const facilityId = facility?.id;
-  const facilityName = facility?.name || "Active Facility";
+  const pharmacyId = pharmacy?.id;
+  const facilityName = pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "Active Pharmacy";
 
   // State: SKUs list in facility for selection
   const [facilitySkus, setFacilitySkus] = useState([]);
@@ -85,7 +85,7 @@ function BinCard() {
 
   // 1. Fetch SKUs for the facility selector
   const fetchFacilitySkus = useCallback(async () => {
-    if (!facilityId) {
+    if (!pharmacyId) {
       setLoadingSkus(false);
       setLoadingBinCard(false);
       return;
@@ -93,7 +93,7 @@ function BinCard() {
     try {
       setLoadingSkus(true);
       setError(null);
-      const skus = await skuService.getDropdownSkus(facilityId);
+      const skus = await skuService.getDropdownSkus(pharmacyId);
       const skuList = Array.isArray(skus) ? skus : [];
       setFacilitySkus(skuList);
       if (!selectedSkuId && skuList.length > 0) {
@@ -109,7 +109,7 @@ function BinCard() {
     } finally {
       setLoadingSkus(false);
     }
-  }, [facilityId, selectedSkuId]);
+  }, [pharmacyId, selectedSkuId]);
 
   useEffect(() => {
     fetchFacilitySkus();
@@ -149,7 +149,7 @@ function BinCard() {
 
   // 3. Fetch Bin Card for currently selected SKU
   const fetchBinCard = useCallback(async () => {
-    if (!facilityId || !selectedSkuId) {
+    if (!pharmacyId || !selectedSkuId) {
       setBinCardData(null);
       setLoadingBinCard(false);
       return;
@@ -160,7 +160,7 @@ function BinCard() {
       setError(null);
       const data = await inventoryTransactionService.getSkuBinCard(
         selectedSkuId,
-        facilityId,
+        pharmacyId,
         computedDates.start,
         computedDates.end
       );
@@ -177,7 +177,7 @@ function BinCard() {
     } finally {
       setLoadingBinCard(false);
     }
-  }, [facilityId, selectedSkuId, computedDates.start, computedDates.end]);
+  }, [pharmacyId, selectedSkuId, computedDates.start, computedDates.end]);
 
   useEffect(() => {
     fetchBinCard();

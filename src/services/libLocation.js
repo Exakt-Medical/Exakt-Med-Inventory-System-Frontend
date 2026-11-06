@@ -11,10 +11,11 @@ const getAuthHeaders = (config = {}) => {
 
 const libLocationService = {
   getAllLocations: async (params = {}, config = {}) => {
-    const pharmacyId = params?.pharmacyId ?? params?.facilityId;
+    const pharmacyId = params?.pharmacyId;
     if (!pharmacyId) return [];
+    const { facilityId, ...cleanParams } = params;
     const response = await axios.get(
-      libLocationApi.getAllLocations({ ...params, pharmacyId }),
+      libLocationApi.getAllLocations({ ...cleanParams, pharmacyId }),
       {
         ...config,
         headers: getAuthHeaders(config),

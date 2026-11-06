@@ -30,8 +30,9 @@ const skuService = {
     if (typeof paramsOrPharmacyId === "object" && paramsOrPharmacyId !== null) {
       params = {
         ...paramsOrPharmacyId,
-        pharmacyId: paramsOrPharmacyId.pharmacyId ?? paramsOrPharmacyId.facilityId,
+        pharmacyId: paramsOrPharmacyId.pharmacyId,
       };
+      delete params.facilityId;
     } else {
       params = {
         pharmacyId: paramsOrPharmacyId,

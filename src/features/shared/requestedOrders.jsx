@@ -67,7 +67,7 @@ const normalizeOrder = (raw) => {
     supplierId: raw.supplierId,
     supplierName: raw.supplierName || "Supplier",
     targetFacility: raw.pharmacyName || raw.facilityName || raw.targetFacility || "Pharmacy",
-    facilityId: raw.pharmacyId ?? raw.facilityId,
+    facilityId: raw.facilityId,
     pharmacyId: raw.pharmacyId,
     priority: raw.priority || "Normal",
     status: raw.status === "Denied" ? "Rejected" : raw.status || "Pending",
@@ -99,7 +99,7 @@ function RequestedOrders() {
     return pharmacy?.pharmacyName || pharmacy?.name || facility?.name || "";
   }, [pharmacy, facility]);
 
-  const targetFacilityId = useMemo(() => {
+  const targetPharmacyId = useMemo(() => {
     return pharmacy?.id || null;
   }, [pharmacy]);
 
@@ -138,7 +138,7 @@ function RequestedOrders() {
   });
 
   const fetchSummary = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setMetrics({
         total: 0,
         pending: 0,
@@ -153,7 +153,7 @@ function RequestedOrders() {
 
     try {
       setIsSummaryLoading(true);
-      const summary = await orderService.getOrderSummary(targetFacilityId);
+      const summary = await orderService.getOrderSummary(targetPharmacyId);
       setMetrics({
         total: Number(summary.totalOrders) || 0,
         pending: Number(summary.pendingCount) || 0,
@@ -167,7 +167,7 @@ function RequestedOrders() {
     } finally {
       setIsSummaryLoading(false);
     }
-  }, [targetFacilityId]);
+  }, [targetPharmacyId]);
 
   useEffect(() => {
     fetchSummary();
@@ -175,7 +175,7 @@ function RequestedOrders() {
 
   // Fetch paginated order data from backend
   const fetchOrders = useCallback(async () => {
-    if (!targetFacilityId) {
+    if (!targetPharmacyId) {
       setOrders([]);
       setTotalPages(1);
       setTotalElements(0);
@@ -187,7 +187,7 @@ function RequestedOrders() {
       setIsLoading(true);
       setFetchError(null);
       const params = {
-        pharmacyId: targetFacilityId,
+        pharmacyId: targetPharmacyId,
         page: currentPage - 1,
         size: itemsPerPage,
         sortBy: "createdAt",
@@ -228,7 +228,7 @@ function RequestedOrders() {
       setIsLoading(false);
     }
   }, [
-    targetFacilityId,
+    targetPharmacyId,
     currentPage,
     itemsPerPage,
     debouncedSearch,
