@@ -1559,12 +1559,15 @@ function SkuManagement() {
                               <span className="font-semibold text-gray-900 text-sm">
                                 {item.brandName}
                               </span>
-                              <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                              <span className="font-mono text-[11px] text-gray-500">
                                 {item.sku}
                               </span>
                             </div>
-                            <div className="text-xs text-gray-500 pb-1">
-                              {item.genericName} • {item.dosage}
+                            <div className="text-xs text-gray-500 pb-1 mt-0.5">
+                              <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                                {item.genericName}
+                              </span>
+                              {item.dosage && ` • ${item.dosage}`}
                             </div>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {/* Deduct Expired Batches Button inside row */}
@@ -2173,11 +2176,14 @@ function SkuManagement() {
                 <span className="font-bold text-gray-900 text-sm">
                   {selectedSku.brandName}
                 </span>
-                <p className="text-blue-700 font-mono font-bold mt-0.5">
+                <p className="text-gray-500 font-mono text-xs mt-0.5">
                   {selectedSku.sku}
                 </p>
-                <p className="text-gray-500 text-[11px]">
-                  {selectedSku.genericName} • {selectedSku.dosage}
+                <p className="text-gray-500 text-[11px] mt-1">
+                  <span className="text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-bold">
+                    {selectedSku.genericName}
+                  </span>
+                  {selectedSku.dosage && ` • ${selectedSku.dosage}`}
                 </p>
                 <span className="inline-block mt-1 text-[10px] text-gray-400 font-medium">
                   Facility: {selectedSku.facility || currentFacilityName}
@@ -2645,12 +2651,15 @@ function SkuManagement() {
                   <h3 className="text-base font-bold text-gray-900">
                     {selectedSku.brandName}
                   </h3>
-                  <span className="font-mono text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                  <span className="font-mono text-xs text-gray-500">
                     {selectedSku.sku}
                   </span>
                 </div>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {selectedSku.genericName} • {selectedSku.dosage}
+                <p className="text-xs text-gray-500 mt-1">
+                  <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                    {selectedSku.genericName}
+                  </span>
+                  {selectedSku.dosage && ` • ${selectedSku.dosage}`}
                 </p>
                 <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                   <span className="text-xs text-gray-600 font-medium">
