@@ -100,6 +100,14 @@ const skuService = {
     return response.data;
   },
 
+  reactivateSku: async (id, config = {}) => {
+    const response = await axios.patch(skuApi.reactivateSku(id), {}, {
+      ...config,
+      headers: getAuthHeaders(config),
+    });
+    return response.data;
+  },
+
   adjustStock: async (id, adjustmentData, config = {}) => {
     const response = await axios.patch(skuApi.adjustStock(id), adjustmentData, {
       ...config,

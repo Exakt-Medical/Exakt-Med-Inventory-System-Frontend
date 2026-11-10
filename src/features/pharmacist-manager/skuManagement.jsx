@@ -17,6 +17,7 @@ import {
   Calendar,
   Loader2,
   RefreshCw,
+  RotateCcw,
   User,
   Phone,
   UserPlus,
@@ -334,7 +335,7 @@ const mapDtoToSku = (dto) => {
     pharmacy: dto.pharmacyName || "",
     facilityId: dto.facilityId,
     facility: dto.pharmacyName || dto.facilityName || "",
-    status: "Active",
+    status: dto.status || "Active",
     pendingUnits: Number(dto.pendingUnits || 0),
     toReceiveUnits: Number(dto.toReceiveUnits || 0),
     hasPendingRestock: Boolean(dto.hasPendingRestock),
@@ -369,6 +370,7 @@ function SkuManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStockFilter, setSelectedStockFilter] = useState("ALL");
+  const [selectedStatusFilter, setSelectedStatusFilter] = useState("ALL");
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [totalElements, setTotalElements] = useState(0);
@@ -485,7 +487,7 @@ function SkuManagement() {
 
   // Fetch paginated SKUs from backend API
   const fetchSkus = useCallback(
-    async (pageToFetch = 1, query = "", filter = "ALL") => {
+    async (pageToFetch = 1, query = "", stockFilter = "ALL", statusFilter = "ALL") => {
       try {
         setIsLoadingSkus(true);
         setSkuError(null);
@@ -500,7 +502,8 @@ function SkuManagement() {
         const data = await skuService.getSkusPaginated({
           pharmacyId: targetPharmacyId,
           search: query ? query.trim() : "",
-          status: filter || "ALL",
+          status: statusFilter || "ALL",
+          stockStatus: stockFilter || "ALL",
           page: Math.max(0, pageToFetch - 1),
           size: itemsPerPage,
           sortBy: "genericName",
@@ -536,14 +539,14 @@ function SkuManagement() {
     fetchSummary();
   }, [fetchSummary]);
 
-  // Debounced fetch SKUs when page, query, or stock filter changes
+  // Debounced fetch SKUs when page, query, stock filter, or status filter changes
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchSkus(currentPage, searchQuery, selectedStockFilter);
+      fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [fetchSkus, currentPage, searchQuery, selectedStockFilter]);
+  }, [fetchSkus, currentPage, searchQuery, selectedStockFilter, selectedStatusFilter]);
 
   // Search Medicine Library from backend API
   const handleSearchMedicines = async (searchQuery = "") => {
@@ -654,7 +657,7 @@ function SkuManagement() {
       });
 
       // Refresh SKUs and summary from backend
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter);
+      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
       await fetchSummary();
     } catch (err) {
       console.error("Failed to process expired batches:", err);
@@ -683,6 +686,11 @@ function SkuManagement() {
 
   const handleStockFilterChange = (e) => {
     setSelectedStockFilter(e.target.value);
+    setCurrentPage(1);
+  };
+
+  const handleStatusFilterChange = (e) => {
+    setSelectedStatusFilter(e.target.value);
     setCurrentPage(1);
   };
 
@@ -790,6 +798,25 @@ function SkuManagement() {
   const handleOpenDeleteModal = (skuItem) => {
     setSelectedSku(skuItem);
     setModalMode("delete");
+  };
+
+  const handleReactivateSku = async (skuItem) => {
+    if (!skuItem) return;
+    setIsSubmitting(true);
+    try {
+      await skuService.reactivateSku(skuItem.id);
+      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      await fetchSummary();
+    } catch (err) {
+      console.error("Failed to reactivate SKU:", err);
+      const errorMsg =
+        err?.response?.data?.message ||
+        err?.message ||
+        "Failed to reactivate SKU.";
+      setSkuError(errorMsg);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
 
@@ -1007,7 +1034,7 @@ function SkuManagement() {
       });
       setIsRestockSuccessModalOpen(true);
       handleCloseModal();
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter);
+      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
       fetchDropdownSkus();
     } catch (err) {
       console.error("Failed to submit restock request:", err);
@@ -1115,6 +1142,7 @@ function SkuManagement() {
           minimumLevel: Number(formData.minimumLevel),
           reorderLevel: Number(formData.reorderLevel),
           maximumLevel: Number(formData.maximumLevel),
+          status: formData.status || "Active",
         };
 
         const responseDto = await skuService.createSku(payload);
@@ -1128,7 +1156,7 @@ function SkuManagement() {
         setCreatedSkuInfo(newSkuItem);
         setIsSuccessModalOpen(true);
         setCurrentPage(1);
-        await fetchSkus(1, searchQuery, selectedStockFilter);
+        await fetchSkus(1, searchQuery, selectedStockFilter, selectedStatusFilter);
         await fetchSummary();
         return;
       } else if (modalMode === "edit" && selectedSku) {
@@ -1157,11 +1185,12 @@ function SkuManagement() {
           minimumLevel: Number(formData.minimumLevel),
           reorderLevel: Number(formData.reorderLevel),
           maximumLevel: Number(formData.maximumLevel),
+          status: formData.status || "Active",
         };
 
         await skuService.updateSku(selectedSku.id, payload);
         handleCloseModal();
-        await fetchSkus(currentPage, searchQuery, selectedStockFilter);
+        await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
         await fetchSummary();
       }
     } catch (err) {
@@ -1190,7 +1219,7 @@ function SkuManagement() {
       if (targetPage !== currentPage) {
         setCurrentPage(targetPage);
       }
-      await fetchSkus(targetPage, searchQuery, selectedStockFilter);
+      await fetchSkus(targetPage, searchQuery, selectedStockFilter, selectedStatusFilter);
       await fetchSummary();
     } catch (err) {
       console.error("Failed to delete SKU from server:", err);
@@ -1338,7 +1367,7 @@ function SkuManagement() {
         batchNum: targetBatchObj ? targetBatchObj.batchNum : null,
       };
 
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter);
+      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
       await fetchSummary();
       handleCloseModal();
       setAdjustSuccessInfo(adjustmentDetail);
@@ -1379,7 +1408,7 @@ function SkuManagement() {
           <button
             type="button"
             onClick={() => {
-              fetchSkus(currentPage, searchQuery, selectedStockFilter);
+              fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
               fetchSummary();
             }}
             disabled={isLoadingSkus || isLoadingSummary}
@@ -1550,7 +1579,7 @@ function SkuManagement() {
                 setSearchQuery("");
                 setCurrentPage(1);
               }}
-              placeholder="Search by SKU, brand, generic, dosage..."
+              placeholder="Search by brand or generic name..."
             />
           </div>
 
@@ -1567,6 +1596,19 @@ function SkuManagement() {
                 { value: "REORDER", label: "Reorder Triggered" },
                 { value: "CRITICAL", label: "Critical (≤ Min)" },
                 { value: "OUT_OF_STOCK", label: "Out of Stock" },
+              ]}
+            />
+
+            {/* Catalog Status Filter (Active / Inactive) */}
+            <Dropdown
+              value={selectedStatusFilter}
+              onChange={handleStatusFilterChange}
+              size="sm"
+              className="w-full sm:w-36"
+              options={[
+                { value: "ALL", label: "All Statuses" },
+                { value: "ACTIVE", label: "Active" },
+                { value: "INACTIVE", label: "Inactive" },
               ]}
             />
           </div>
@@ -1681,17 +1723,30 @@ function SkuManagement() {
                       {/* SKU & Medicine Details */}
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-start gap-3">
-                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 font-semibold text-xs border border-blue-100 shrink-0 mt-0.5">
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                            item.status === "Inactive"
+                              ? "bg-slate-100 text-slate-400 border-slate-200"
+                              : "bg-blue-50 text-blue-600 border-blue-100"
+                          } font-semibold text-xs border shrink-0 mt-0.5`}>
                             <Pill className="w-4 h-4" />
                           </div>
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-semibold text-gray-900 text-sm">
+                              <span className={`font-semibold text-sm ${item.status === "Inactive" ? "text-gray-500 line-through decoration-gray-400" : "text-gray-900"}`}>
                                 {item.brandName}
                               </span>
                               <span className="font-mono text-[11px] text-gray-500">
                                 {item.sku}
                               </span>
+                              {item.status === "Inactive" ? (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                                  INACTIVE
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                  ACTIVE
+                                </span>
+                              )}
                             </div>
                             <div className="text-xs text-gray-500 pb-1 mt-0.5">
                               <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
@@ -1886,7 +1941,17 @@ function SkuManagement() {
                           </button>
 
                           {/* 2. Stock Adjustment OR Process Expired (replaces adjustment when expired batches exist) */}
-                          {skuExpiredCount > 0 ? (
+                          {item.status === "Inactive" ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                              title="Cannot adjust stock for an inactive SKU"
+                              aria-label="Stock Adjustment Disabled"
+                            >
+                              <Sliders className="w-3.5 h-3.5 text-gray-300" />
+                            </button>
+                          ) : skuExpiredCount > 0 ? (
                             <button
                               type="button"
                               onClick={() => handleOpenExpiredModalForSku(item)}
@@ -1910,23 +1975,35 @@ function SkuManagement() {
                           )}
 
                           {/* 3. Request Restock */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenRestockModal(item)}
-                            className={`p-1.5 rounded transition-colors ${
-                              item.hasPendingRestock
-                                ? "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-                                : "btn-secondary text-gray-600 hover:text-blue-600 hover:border-blue-300"
-                            }`}
-                            title={
-                              item.hasPendingRestock
-                                ? `Active restock request (${item.pendingRestockUnits} units, Status: ${item.pendingRestockStatus || "Requested"}). Can only request again once Received.`
-                                : "Request Restock for this SKU"
-                            }
-                            aria-label="Request Restock"
-                          >
-                            <PackagePlus className="w-3.5 h-3.5" />
-                          </button>
+                          {item.status === "Inactive" ? (
+                            <button
+                              type="button"
+                              disabled
+                              className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                              title="Cannot restock an inactive SKU"
+                              aria-label="Request Restock Disabled"
+                            >
+                              <PackagePlus className="w-3.5 h-3.5 text-gray-300" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenRestockModal(item)}
+                              className={`p-1.5 rounded transition-colors ${
+                                item.hasPendingRestock
+                                  ? "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
+                                  : "btn-secondary text-gray-600 hover:text-blue-600 hover:border-blue-300"
+                              }`}
+                              title={
+                                item.hasPendingRestock
+                                  ? `Active restock request (${item.pendingRestockUnits} units, Status: ${item.pendingRestockStatus || "Requested"}). Can only request again once Received.`
+                                  : "Request Restock for this SKU"
+                              }
+                              aria-label="Request Restock"
+                            >
+                              <PackagePlus className="w-3.5 h-3.5" />
+                            </button>
+                          )}
 
                           {/* 4. Edit SKU & Thresholds */}
                           <button
@@ -1939,16 +2016,29 @@ function SkuManagement() {
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* 5. Delete SKU */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenDeleteModal(item)}
-                            className="btn-danger p-1.5"
-                            title="Delete SKU"
-                            aria-label="Delete SKU"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          {/* 5. Deactivate OR Reactivate SKU */}
+                          {item.status === "Inactive" ? (
+                            <button
+                              type="button"
+                              disabled={isSubmitting}
+                              onClick={() => handleReactivateSku(item)}
+                              className="btn-secondary p-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
+                              title="Reactivate SKU (Set to Active)"
+                              aria-label="Reactivate SKU"
+                            >
+                              <RotateCcw className="w-3.5 h-3.5" />
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDeleteModal(item)}
+                              className="btn-danger p-1.5"
+                              title="Set Inactive (Deactivate SKU)"
+                              aria-label="Deactivate SKU"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -2249,6 +2339,36 @@ function SkuManagement() {
                 </div>
               </div>
             </div>
+
+            {/* Catalog Status (Active / Inactive) */}
+            {modalMode === "edit" && (
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                <label
+                  htmlFor="sku-status"
+                  className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
+                >
+                  Catalog Status
+                </label>
+                <Dropdown
+                  id="sku-status"
+                  name="status"
+                  options={[
+                    { value: "Active", label: "Active (Operational)" },
+                    { value: "Inactive", label: "Inactive (Deactivated)" },
+                  ]}
+                  value={formData.status || "Active"}
+                  onChange={(e) => {
+                    handleInputChange({
+                      target: {
+                        name: "status",
+                        value: e?.target?.value ?? e,
+                      },
+                    });
+                  }}
+                  helperText="Inactive SKUs are hidden from order requests and dispensing, while historical batches remain intact."
+                />
+              </div>
+            )}
           </div>
 
           {/* Modal Action Buttons */}
@@ -2829,6 +2949,15 @@ function SkuManagement() {
                   <span className="font-mono text-xs text-gray-500">
                     {selectedSku.sku}
                   </span>
+                  {selectedSku.status === "Inactive" ? (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                      Inactive
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Active
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
                   <span className="text-xs text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
@@ -3003,13 +3132,13 @@ function SkuManagement() {
       </Modal>
 
       {/* ======================================================== */}
-      {/* 5. DELETE SKU CONFIRMATION MODAL                         */}
+      {/* 5. DEACTIVATE SKU CONFIRMATION MODAL                     */}
       {/* ======================================================== */}
       <DeleteModal
         isOpen={modalMode === "delete" && Boolean(selectedSku)}
         onClose={handleCloseModal}
         onConfirm={handleConfirmDelete}
-        title="Delete Stock-Keeping Unit"
+        title="Set SKU to Inactive"
         itemName={selectedSku?.brandName}
         itemCode={selectedSku?.sku}
         itemType="SKU"
@@ -3017,18 +3146,18 @@ function SkuManagement() {
         message={
           selectedSku && (
             <>
-              This will remove SKU{" "}
+              This will set SKU{" "}
               <span className="font-bold font-mono">{selectedSku.sku}</span> (
               <span className="font-semibold">{selectedSku.brandName}</span>)
-              from{" "}
+              to <span className="font-bold text-amber-800">Inactive</span> in{" "}
               <span className="font-bold">
                 {selectedSku.facility || currentFacilityName}
               </span>
-              .
+              . It will no longer appear in new orders, restock requests, or active dispensing. Historical inventory records and batches will remain safely preserved.
             </>
           )
         }
-        confirmText="Delete SKU"
+        confirmText="Set Inactive"
       />
 
       {/* ======================================================== */}

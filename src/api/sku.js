@@ -7,6 +7,7 @@ const skuApi = {
     pharmacyId,
     search,
     status,
+    stockStatus,
     stockFilter,
     page = 0,
     size = 10,
@@ -15,8 +16,11 @@ const skuApi = {
   }) => {
     let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
     if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
-    const filterValue = status || stockFilter;
-    if (filterValue && filterValue !== "ALL") url += `&status=${encodeURIComponent(filterValue)}`;
+    if (status && status !== "ALL") url += `&status=${encodeURIComponent(status)}`;
+    const effectiveStockStatus = stockStatus || stockFilter;
+    if (effectiveStockStatus && effectiveStockStatus !== "ALL") {
+      url += `&stockStatus=${encodeURIComponent(effectiveStockStatus)}`;
+    }
     return url;
   },
   getSkuSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
@@ -24,6 +28,7 @@ const skuApi = {
   getSkuById: (id) => `${API_URL}/${id}`,
   updateSku: (id) => `${API_URL}/${id}`,
   deleteSku: (id) => `${API_URL}/${id}`,
+  reactivateSku: (id) => `${API_URL}/${id}/reactivate`,
   adjustStock: (id) => `${API_URL}/${id}/adjust-stock`,
   getReorderNeededSkus: (pharmacyId, search = "") => {
     const params = new URLSearchParams();
