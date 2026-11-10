@@ -172,7 +172,8 @@ function BatchManagement() {
   const [locationsList, setLocationsList] = useState([]);
   const [isLocationsLoading, setIsLocationsLoading] = useState(false);
   const [isLocationModalOpen, setIsLocationModalOpen] = useState(false);
-  const [locationModalInitialView, setLocationModalInitialView] = useState("list");
+  const [locationModalInitialView, setLocationModalInitialView] =
+    useState("list");
   const [quickAddTarget, setQuickAddTarget] = useState(null);
 
   // Relocate Batch State
@@ -214,7 +215,7 @@ function BatchManagement() {
         quickAddTarget.itemIdx,
         quickAddTarget.batchIdx,
         "locationId",
-        newLoc.id
+        newLoc.id,
       );
       setQuickAddTarget(null);
     }
@@ -238,17 +239,19 @@ function BatchManagement() {
       setRelocateError("");
       const updated = await batchService.updateBatchLocation(
         relocateTarget.id,
-        Number(newLocationId)
+        Number(newLocationId),
       );
       const mapped = mapBatchDtoToItem(updated);
       setBatchList((prev) =>
-        prev.map((b) => (b.id === relocateTarget.id ? mapped : b))
+        prev.map((b) => (b.id === relocateTarget.id ? mapped : b)),
       );
       setRelocateTarget(null);
     } catch (err) {
       console.error("Failed to relocate batch:", err);
       setRelocateError(
-        err.response?.data?.message || err.message || "Failed to relocate batch."
+        err.response?.data?.message ||
+          err.message ||
+          "Failed to relocate batch.",
       );
     } finally {
       setIsRelocating(false);
@@ -310,7 +313,8 @@ function BatchManagement() {
         orderNumber,
         status: po.status || "Approved",
         supplierName: po.supplierName || "Supplier",
-        targetFacility: po.pharmacyName || po.facilityName || currentFacilityName,
+        targetFacility:
+          po.pharmacyName || po.facilityName || currentFacilityName,
         facilityId: po.facilityId,
         pharmacyId: po.pharmacyId,
         totalQuantity: totalOrdered,
@@ -783,14 +787,36 @@ function BatchManagement() {
 
   // Update a field on a specific batch row
   const handleBatchFieldChange = (itemIdx, batchIdx, field, value) => {
+    let existingFound = false;
     setReceiveFormData((prev) => {
       const nextItems = [...prev.items];
       const item = nextItems[itemIdx];
       const nextBatches = [...(item.batches || [])];
-      nextBatches[batchIdx] = {
+      let updatedBatch = {
         ...nextBatches[batchIdx],
         [field]: value,
       };
+
+      if (field === "batchNumber") {
+        const trimmed = (value || "").trim().toUpperCase();
+        const existing = (batchList || []).find(
+          (b) => (b.batchNumber || "").trim().toUpperCase() === trimmed,
+        );
+        if (existing) {
+          existingFound = true;
+          if (existing.manufacturingDate) {
+            updatedBatch.manufacturingDate = existing.manufacturingDate;
+          }
+          if (existing.expiryDate) {
+            updatedBatch.expiryDate = existing.expiryDate;
+          }
+          if (existing.locationId && !updatedBatch.locationId) {
+            updatedBatch.locationId = String(existing.locationId);
+          }
+        }
+      }
+
+      nextBatches[batchIdx] = updatedBatch;
       nextItems[itemIdx] = {
         ...item,
         batches: nextBatches,
@@ -801,6 +827,11 @@ function BatchManagement() {
     const errKey = `item_${itemIdx}_batch_${batchIdx}_${field}`;
     if (formErrors[errKey]) {
       clearError(errKey);
+    }
+    if (existingFound) {
+      clearError(`item_${itemIdx}_batch_${batchIdx}_manufacturingDate`);
+      clearError(`item_${itemIdx}_batch_${batchIdx}_expiryDate`);
+      clearError(`item_${itemIdx}_batch_${batchIdx}_locationId`);
     }
     if (formErrors[`item_${itemIdx}_allocation`]) {
       clearError(`item_${itemIdx}_allocation`);
@@ -815,11 +846,25 @@ function BatchManagement() {
       ...prev,
       items: prev.items.map((item) => ({
         ...item,
-        batches: (item.batches || []).map((b) => ({
-          ...b,
-          manufacturingDate: bulkDates.manufacturingDate || b.manufacturingDate,
-          expiryDate: bulkDates.expiryDate || b.expiryDate,
-        })),
+        batches: (item.batches || []).map((b) => {
+          const isExisting = Boolean(
+            (b.batchNumber || "").trim() &&
+            (batchList || []).some(
+              (ex) =>
+                (ex.batchNumber || "").trim().toUpperCase() ===
+                (b.batchNumber || "").trim().toUpperCase(),
+            ),
+          );
+          if (isExisting) {
+            return b;
+          }
+          return {
+            ...b,
+            manufacturingDate:
+              bulkDates.manufacturingDate || b.manufacturingDate,
+            expiryDate: bulkDates.expiryDate || b.expiryDate,
+          };
+        }),
       })),
     }));
 
@@ -894,13 +939,13 @@ function BatchManagement() {
               orderedItemId: item.orderedItemId || item.id,
               batchNum: b.batchNumber.trim().toUpperCase(),
               units: units,
-              manufactureDate: b.manufacturingDate,
-              expiryDate: b.expiryDate,
+              manufactureDate: b.manufacturingDate || null,
+              expiryDate: b.expiryDate || null,
               status: isQuar ? "Quarantined" : "Available",
               notes: isQuar
                 ? b.quarantineNotes?.trim() || "Quality inspection hold"
                 : null,
-              locationId: Number(b.locationId),
+              locationId: b.locationId ? Number(b.locationId) : null,
             });
           }
         });
@@ -1343,7 +1388,9 @@ function BatchManagement() {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-xs text-gray-400 italic">Unassigned</span>
+                          <span className="text-xs text-gray-400 italic">
+                            Unassigned
+                          </span>
                         )}
                       </td>
 
@@ -1905,6 +1952,17 @@ function BatchManagement() {
                           <div className="space-y-3">
                             {item.batches?.map((batch, bIdx) => {
                               const batchErrPrefix = `item_${idx}_batch_${bIdx}`;
+                              const existingBatch = (batchList || []).find(
+                                (b) =>
+                                  (b.batchNumber || "").trim().toUpperCase() ===
+                                  (batch.batchNumber || "")
+                                    .trim()
+                                    .toUpperCase(),
+                              );
+                              const isExistingBatch = Boolean(
+                                (batch.batchNumber || "").trim() &&
+                                existingBatch,
+                              );
                               return (
                                 <div
                                   key={batch.id || bIdx}
@@ -1916,6 +1974,11 @@ function BatchManagement() {
                                       <span className="font-bold text-[11px] text-slate-700 bg-white border border-gray-200 px-2 py-0.5 rounded-md shadow-2xs">
                                         Batch #{bIdx + 1}
                                       </span>
+                                      {isExistingBatch && (
+                                        <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100/90 border border-emerald-200 px-2 py-0.5 rounded-md">
+                                          Existing Batch (Units will increment)
+                                        </span>
+                                      )}
                                       {batch.isQuarantined && (
                                         <span className="text-[10px] font-bold text-amber-700 bg-amber-100/90 border border-amber-200 px-2 py-0.5 rounded-md">
                                           Quarantine Hold Active
@@ -1940,8 +2003,14 @@ function BatchManagement() {
                                     )}
                                   </div>
 
-                                  {/* 5 Input Controls: Batch #, Units, Mfg Date, Expiry Date, Storage Location */}
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+                                  {/* Input Controls: Batch #, Units, [Mfg Date, Expiry Date if new], Storage Location */}
+                                  <div
+                                    className={`grid grid-cols-1 ${
+                                      isExistingBatch
+                                        ? "sm:grid-cols-3"
+                                        : "sm:grid-cols-2 lg:grid-cols-5"
+                                    } gap-3`}
+                                  >
                                     {/* Batch / Lot Number */}
                                     <div>
                                       <label
@@ -2036,89 +2105,99 @@ function BatchManagement() {
                                       )}
                                     </div>
 
-                                    {/* Manufacturing Date */}
-                                    <div>
-                                      <label
-                                        htmlFor={`receive-batch-mfg-${idx}-${bIdx}`}
-                                        className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1"
-                                      >
-                                        Manufacturing Date{" "}
-                                        <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        id={`receive-batch-mfg-${idx}-${bIdx}`}
-                                        type="date"
-                                        value={batch.manufacturingDate || ""}
-                                        onChange={(e) =>
-                                          handleBatchFieldChange(
-                                            idx,
-                                            bIdx,
-                                            "manufacturingDate",
-                                            e.target.value,
-                                          )
-                                        }
-                                        className={`input text-xs bg-white ${
-                                          formErrors[
+                                    {!isExistingBatch && (
+                                      <>
+                                        {/* Manufacturing Date */}
+                                        <div>
+                                          <label
+                                            htmlFor={`receive-batch-mfg-${idx}-${bIdx}`}
+                                            className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1"
+                                          >
+                                            Manufacturing Date{" "}
+                                            <span className="text-red-500">
+                                              *
+                                            </span>
+                                          </label>
+                                          <input
+                                            id={`receive-batch-mfg-${idx}-${bIdx}`}
+                                            type="date"
+                                            value={
+                                              batch.manufacturingDate || ""
+                                            }
+                                            onChange={(e) =>
+                                              handleBatchFieldChange(
+                                                idx,
+                                                bIdx,
+                                                "manufacturingDate",
+                                                e.target.value,
+                                              )
+                                            }
+                                            className={`input text-xs bg-white ${
+                                              formErrors[
+                                                `${batchErrPrefix}_manufacturingDate`
+                                              ]
+                                                ? "border-red-500 focus:border-red-500 focus:ring-red-500/30"
+                                                : ""
+                                            }`}
+                                          />
+                                          {formErrors[
                                             `${batchErrPrefix}_manufacturingDate`
-                                          ]
-                                            ? "border-red-500 focus:border-red-500 focus:ring-red-500/30"
-                                            : ""
-                                        }`}
-                                      />
-                                      {formErrors[
-                                        `${batchErrPrefix}_manufacturingDate`
-                                      ] && (
-                                        <p className="text-[11px] text-red-500 mt-1">
-                                          {
-                                            formErrors[
-                                              `${batchErrPrefix}_manufacturingDate`
-                                            ]
-                                          }
-                                        </p>
-                                      )}
-                                    </div>
+                                          ] && (
+                                            <p className="text-[11px] text-red-500 mt-1">
+                                              {
+                                                formErrors[
+                                                  `${batchErrPrefix}_manufacturingDate`
+                                                ]
+                                              }
+                                            </p>
+                                          )}
+                                        </div>
 
-                                    {/* Expiration Date */}
-                                    <div>
-                                      <label
-                                        htmlFor={`receive-batch-exp-${idx}-${bIdx}`}
-                                        className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1"
-                                      >
-                                        Expiration Date{" "}
-                                        <span className="text-red-500">*</span>
-                                      </label>
-                                      <input
-                                        id={`receive-batch-exp-${idx}-${bIdx}`}
-                                        type="date"
-                                        value={batch.expiryDate || ""}
-                                        onChange={(e) =>
-                                          handleBatchFieldChange(
-                                            idx,
-                                            bIdx,
-                                            "expiryDate",
-                                            e.target.value,
-                                          )
-                                        }
-                                        className={`input text-xs bg-white ${
-                                          formErrors[
+                                        {/* Expiration Date */}
+                                        <div>
+                                          <label
+                                            htmlFor={`receive-batch-exp-${idx}-${bIdx}`}
+                                            className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider mb-1"
+                                          >
+                                            Expiration Date{" "}
+                                            <span className="text-red-500">
+                                              *
+                                            </span>
+                                          </label>
+                                          <input
+                                            id={`receive-batch-exp-${idx}-${bIdx}`}
+                                            type="date"
+                                            value={batch.expiryDate || ""}
+                                            onChange={(e) =>
+                                              handleBatchFieldChange(
+                                                idx,
+                                                bIdx,
+                                                "expiryDate",
+                                                e.target.value,
+                                              )
+                                            }
+                                            className={`input text-xs bg-white ${
+                                              formErrors[
+                                                `${batchErrPrefix}_expiryDate`
+                                              ]
+                                                ? "border-red-500 focus:border-red-500 focus:ring-red-500/30"
+                                                : ""
+                                            }`}
+                                          />
+                                          {formErrors[
                                             `${batchErrPrefix}_expiryDate`
-                                          ]
-                                            ? "border-red-500 focus:border-red-500 focus:ring-red-500/30"
-                                            : ""
-                                        }`}
-                                      />
-                                      {formErrors[
-                                        `${batchErrPrefix}_expiryDate`
-                                      ] && (
-                                        <p className="text-[11px] text-red-500 mt-1">
-                                          {
-                                            formErrors[
-                                              `${batchErrPrefix}_expiryDate`
-                                            ]
-                                          }
-                                        </p>
-                                      )}
-                                    </div>
+                                          ] && (
+                                            <p className="text-[11px] text-red-500 mt-1">
+                                              {
+                                                formErrors[
+                                                  `${batchErrPrefix}_expiryDate`
+                                                ]
+                                              }
+                                            </p>
+                                          )}
+                                        </div>
+                                      </>
+                                    )}
 
                                     {/* Storage Location */}
                                     <div>
@@ -2128,7 +2207,9 @@ function BatchManagement() {
                                           className="block text-[11px] font-semibold text-gray-700 uppercase tracking-wider"
                                         >
                                           Storage Loc{" "}
-                                          <span className="text-red-500">*</span>
+                                          <span className="text-red-500">
+                                            *
+                                          </span>
                                         </label>
                                         <button
                                           type="button"
@@ -2175,6 +2256,30 @@ function BatchManagement() {
                                       />
                                     </div>
                                   </div>
+                                  {isExistingBatch &&
+                                    !formErrors[
+                                      `${batchErrPrefix}_batchNumber`
+                                    ] && (
+                                      <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200/80 rounded-md px-2 py-1 mt-1">
+                                        <span className="font-semibold">
+                                          Existing batch detected.
+                                        </span>{" "}
+                                        Preserving original dates (Mfg:{" "}
+                                        <span className="font-medium text-emerald-900">
+                                          {existingBatch?.manufacturingDate ||
+                                            batch.manufacturingDate ||
+                                            "N/A"}
+                                        </span>
+                                        {" • "}
+                                        <span className="font-medium text-emerald-900">
+                                          Exp:{" "}
+                                          {existingBatch?.expiryDate ||
+                                            batch.expiryDate ||
+                                            "N/A"}
+                                        </span>
+                                        ).
+                                      </div>
+                                    )}
 
                                   {/* Quality Hold / Quarantine Option for this specific batch */}
                                   <div className="pt-2 border-t border-gray-200/70">
@@ -2458,7 +2563,9 @@ function BatchManagement() {
                     {getStorageTypeBadge(selectedBatch.locationStorageType)}
                   </div>
                 ) : (
-                  <span className="text-xs text-gray-400 italic">Unassigned</span>
+                  <span className="text-xs text-gray-400 italic">
+                    Unassigned
+                  </span>
                 )}
               </div>
 
@@ -2789,7 +2896,6 @@ function BatchManagement() {
           setQuickAddTarget(null);
         }}
         pharmacyId={activePharmacyId}
-
         onLocationCreated={handleLocationCreated}
         initialView={locationModalInitialView}
       />

@@ -16,16 +16,13 @@ export const validateBatchRow = (
     "Batch number is required."
   );
   const trimmedBatch = (batch.batchNumber || "").trim().toUpperCase();
+  const existingInInventory = batchList.find(
+    (b) =>
+      b.id !== excludeId &&
+      (b.batchNumber || "").trim().toUpperCase() === trimmedBatch
+  );
   if (!batchNumErr) {
-    if (
-      batchList.some(
-        (b) =>
-          b.id !== excludeId &&
-          (b.batchNumber || "").trim().toUpperCase() === trimmedBatch
-      )
-    ) {
-      batchNumErr = "Batch number already exists in inventory.";
-    } else if (existingEnteredBatches.has(trimmedBatch)) {
+    if (existingEnteredBatches.has(trimmedBatch)) {
       batchNumErr = "Duplicate batch number entered in this receipt.";
     }
   }
@@ -42,8 +39,10 @@ export const validateBatchRow = (
     unitsErr = "Units must be greater than 0.";
   }
 
-  let expiryErr = isRequired(batch.expiryDate, "Expiry date is required.");
-  if (!expiryErr && batch.manufacturingDate && batch.expiryDate) {
+  let expiryErr = existingInInventory
+    ? null
+    : isRequired(batch.expiryDate, "Expiry date is required.");
+  if (!expiryErr && !existingInInventory && batch.manufacturingDate && batch.expiryDate) {
     if (new Date(batch.expiryDate) <= new Date(batch.manufacturingDate)) {
       expiryErr = "Expiry date must be after manufacturing date.";
     }
@@ -57,15 +56,19 @@ export const validateBatchRow = (
   const errors = {
     batchNumber: batchNumErr,
     units: unitsErr,
-    manufacturingDate: isRequired(
-      batch.manufacturingDate,
-      "Manufacturing date is required."
-    ),
+    manufacturingDate: existingInInventory
+      ? null
+      : isRequired(
+          batch.manufacturingDate,
+          "Manufacturing date is required."
+        ),
     expiryDate: expiryErr,
-    locationId: isRequired(
-      batch.locationId,
-      "Storage location is required."
-    ),
+    locationId: existingInInventory && !batch.locationId
+      ? null
+      : isRequired(
+          batch.locationId,
+          "Storage location is required."
+        ),
     quarantineNotes: quarantineNotesErr,
   };
 
@@ -84,22 +87,21 @@ export const validateBatchItem = (
     "Batch number is required."
   );
   const trimmedBatch = (item.batchNumber || "").trim().toUpperCase();
+  const existingInInventory = batchList.find(
+    (b) =>
+      b.id !== excludeId &&
+      (b.batchNumber || "").trim().toUpperCase() === trimmedBatch
+  );
   if (!batchNumErr) {
-    if (
-      batchList.some(
-        (b) =>
-          b.id !== excludeId &&
-          (b.batchNumber || "").trim().toUpperCase() === trimmedBatch
-      )
-    ) {
-      batchNumErr = "Batch number already exists in inventory.";
-    } else if (existingEnteredBatches.has(trimmedBatch)) {
+    if (existingEnteredBatches.has(trimmedBatch)) {
       batchNumErr = "Duplicate batch number entered in this receipt.";
     }
   }
 
-  let expiryErr = isRequired(item.expiryDate, "Expiry date is required.");
-  if (!expiryErr && item.manufacturingDate && item.expiryDate) {
+  let expiryErr = existingInInventory
+    ? null
+    : isRequired(item.expiryDate, "Expiry date is required.");
+  if (!expiryErr && !existingInInventory && item.manufacturingDate && item.expiryDate) {
     if (new Date(item.expiryDate) <= new Date(item.manufacturingDate)) {
       expiryErr = "Expiry date must be after manufacturing date.";
     }
@@ -131,10 +133,12 @@ export const validateBatchItem = (
 
   const errors = {
     batchNumber: batchNumErr,
-    manufacturingDate: isRequired(
-      item.manufacturingDate,
-      "Manufacturing date is required."
-    ),
+    manufacturingDate: existingInInventory
+      ? null
+      : isRequired(
+          item.manufacturingDate,
+          "Manufacturing date is required."
+        ),
     expiryDate: expiryErr,
     quantity: quantityErr,
     quarantineAllocation: allocationErr,
