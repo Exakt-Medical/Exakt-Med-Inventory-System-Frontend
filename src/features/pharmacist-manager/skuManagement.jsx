@@ -37,7 +37,6 @@ import Skeleton from "../../components/common/skeleton";
 // Services
 import libMedicineService from "../../services/libMedicine";
 import skuService from "../../services/sku";
-import restockRequestService from "../../services/restockRequest";
 import batchService from "../../services/batch";
 import libPackagingUnitService from "../../services/libPackagingUnit";
 import patientService from "../../services/patient";
@@ -53,12 +52,6 @@ import { getStockStatus, getExpiryStatus } from "../../helpers/inventory";
 import useAuth from "../../hooks/useAuth";
 import useError from "../../hooks/useError";
 import { validateSkuForm } from "../../validators/sku.validator";
-
-const DEFAULT_RESTOCK_FORM_DATA = {
-  skuId: "",
-  requestedUnits: "",
-  reason: "",
-};
 
 const extractDosageFromDescription = (description) => {
   if (!description) return "";
@@ -338,11 +331,6 @@ const mapDtoToSku = (dto) => {
     status: dto.status || "Active",
     pendingUnits: Number(dto.pendingUnits || 0),
     toReceiveUnits: Number(dto.toReceiveUnits || 0),
-    hasPendingRestock: Boolean(dto.hasPendingRestock),
-    pendingRestockUnits: Number(dto.pendingRestockUnits || 0),
-    pendingRestockRequestId: dto.pendingRestockRequestId || null,
-    pendingRestockCreatedAt: dto.pendingRestockCreatedAt || null,
-    pendingRestockStatus: dto.pendingRestockStatus || null,
     expiredBatchesCount: Number(dto.expiredBatchesCount || 0),
     expiredUnits: Number(dto.expiredUnits || 0),
     createdAt: dto.createdAt
@@ -385,29 +373,18 @@ function SkuManagement() {
   });
   const [isLoadingSummary, setIsLoadingSummary] = useState(false);
 
-  // Dropdown SKUs for Restock Modal
-  const [dropdownSkus, setDropdownSkus] = useState([]);
-  const [isLoadingDropdownSkus, setIsLoadingDropdownSkus] = useState(false);
-
   // Patient Selection & Inline Registration State for Dispense Adjustments
   const [patients, setPatients] = useState([]);
   const [isLoadingPatients, setIsLoadingPatients] = useState(false);
   const [isNewPatient, setIsNewPatient] = useState(false);
 
-  // Modal State: 'add' | 'view' | 'edit' | 'delete' | 'adjust' | 'restock' | null
+  // Modal State: 'add' | 'view' | 'edit' | 'delete' | 'adjust' | null
   const [modalMode, setModalMode] = useState(null);
   const [selectedSku, setSelectedSku] = useState(null);
   const [formData, setFormData] = useState(DEFAULT_SKU_FORM_DATA);
   const [createdSkuInfo, setCreatedSkuInfo] = useState(null);
   const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
   const [adjustSuccessInfo, setAdjustSuccessInfo] = useState(null);
-  const [restockFormData, setRestockFormData] = useState(
-    DEFAULT_RESTOCK_FORM_DATA,
-  );
-  const [isRestockSubmitting, setIsRestockSubmitting] = useState(false);
-  const [restockSuccessInfo, setRestockSuccessInfo] = useState(null);
-  const [isRestockSuccessModalOpen, setIsRestockSuccessModalOpen] =
-    useState(false);
   const {
     errors: formErrors,
     setErrors: setFormErrors,
@@ -464,24 +441,6 @@ function SkuManagement() {
       console.error("Failed to load SKU summary metrics:", err);
     } finally {
       setIsLoadingSummary(false);
-    }
-  }, [targetPharmacyId]);
-
-  // Fetch dropdown SKUs for Restock modal
-  const fetchDropdownSkus = useCallback(async () => {
-    if (!targetPharmacyId) {
-      setDropdownSkus([]);
-      return;
-    }
-    try {
-      setIsLoadingDropdownSkus(true);
-      const data = await skuService.getDropdownSkus(targetPharmacyId);
-      setDropdownSkus(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Failed to load dropdown SKUs:", err);
-      setDropdownSkus([]);
-    } finally {
-      setIsLoadingDropdownSkus(false);
     }
   }, [targetPharmacyId]);
 
@@ -943,111 +902,14 @@ function SkuManagement() {
     }
   };
 
-  const handleOpenRestockModal = (skuItem = null) => {
-    fetchDropdownSkus();
-    if (skuItem && skuItem.id) {
-      setSelectedSku(skuItem);
-      const suggestedUnits =
-        skuItem.maximumLevel && skuItem.currentStock !== undefined
-          ? Math.max(1, skuItem.maximumLevel - skuItem.currentStock)
-          : "";
-      setRestockFormData({
-        skuId: String(skuItem.id),
-        requestedUnits: suggestedUnits,
-        reason: "",
-      });
-    } else {
-      setSelectedSku(null);
-      setRestockFormData(DEFAULT_RESTOCK_FORM_DATA);
-    }
-    clearErrors();
-    setModalMode("restock");
-  };
-
   const handleCloseModal = () => {
     setModalMode(null);
     setIsNewPatient(false);
     setSelectedSku(null);
-    setRestockFormData(DEFAULT_RESTOCK_FORM_DATA);
     setAdjustFormData(DEFAULT_STOCK_ADJUSTMENT);
     setSkuBatches([]);
     setTargetSkuExpiredBatches([]);
     clearErrors();
-  };
-
-  const handleSaveRestockRequest = async (e) => {
-    e.preventDefault();
-    const errors = {};
-    if (!restockFormData.skuId) {
-      errors.skuId = "Please select an SKU to restock";
-    }
-    const units = Number(restockFormData.requestedUnits);
-    if (!restockFormData.requestedUnits || isNaN(units) || units < 1) {
-      errors.requestedUnits = "Requested units must be at least 1";
-    }
-
-    if (Object.keys(errors).length > 0) {
-      setFormErrors(errors);
-      return;
-    }
-
-    const targetSku =
-      selectedSku ||
-      dropdownSkus.find(
-        (s) => String(s.id) === String(restockFormData.skuId),
-      );
-    if (targetSku?.hasPendingRestock) {
-      setFormErrors({
-        requestedUnits: `A restock request is already active for this SKU (${targetSku.pendingRestockUnits} units, Status: ${targetSku.pendingRestockStatus || "Requested"}). A new request can only be submitted once the current order is Received.`,
-      });
-      return;
-    }
-
-    try {
-      setIsRestockSubmitting(true);
-      const targetPharmacyIdToUse =
-        pharmacy?.id || selectedSku?.pharmacyId || targetPharmacyId;
-
-      if (!targetPharmacyIdToUse) {
-        setFormErrors({
-          skuId:
-            "Active pharmacy could not be determined. Please re-select your operating pharmacy.",
-        });
-        return;
-      }
-
-      const payload = {
-        skuId: Number(restockFormData.skuId),
-        pharmacyId: Number(targetPharmacyIdToUse),
-        requestedUnits: units,
-        reason: restockFormData.reason ? restockFormData.reason.trim() : null,
-      };
-
-      const result = await restockRequestService.createRestockRequest(payload);
-
-      setRestockSuccessInfo({
-        skuCode: result?.skuCode || selectedSku?.sku,
-        brandName: result?.brandName || selectedSku?.brandName,
-        genericName: result?.genericName || selectedSku?.genericName,
-        requestedUnits: result?.requestedUnits || units,
-        facilityName: result?.pharmacyName || result?.facilityName || currentFacilityName,
-      });
-      setIsRestockSuccessModalOpen(true);
-      handleCloseModal();
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
-      fetchDropdownSkus();
-    } catch (err) {
-      console.error("Failed to submit restock request:", err);
-      const serverMessage =
-        err?.response?.data?.message ||
-        err?.message ||
-        "Failed to submit restock request.";
-      setFormErrors({
-        requestedUnits: serverMessage,
-      });
-    } finally {
-      setIsRestockSubmitting(false);
-    }
   };
 
   // Form Field Change Handler
@@ -1419,15 +1281,6 @@ function SkuManagement() {
             <RefreshCw
               className={`w-4 h-4 ${(isLoadingSkus || isLoadingSummary) ? "animate-spin text-blue-600" : ""}`}
             />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleOpenRestockModal()}
-            className="btn-secondary self-start sm:self-auto shadow-sm flex items-center gap-1.5 border-blue-200 text-blue-700 hover:bg-blue-50"
-            title="Request Stock Replenishment"
-          >
-            <PackagePlus className="w-4 h-4 text-blue-600" />
-            <span>Request Extra Stock</span>
           </button>
           <button
             type="button"
@@ -1971,37 +1824,6 @@ function SkuManagement() {
                               aria-label="Stock Adjustment"
                             >
                               <Sliders className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {/* 3. Request Restock */}
-                          {item.status === "Inactive" ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
-                              title="Cannot restock an inactive SKU"
-                              aria-label="Request Restock Disabled"
-                            >
-                              <PackagePlus className="w-3.5 h-3.5 text-gray-300" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenRestockModal(item)}
-                              className={`p-1.5 rounded transition-colors ${
-                                item.hasPendingRestock
-                                  ? "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-                                  : "btn-secondary text-gray-600 hover:text-blue-600 hover:border-blue-300"
-                              }`}
-                              title={
-                                item.hasPendingRestock
-                                  ? `Active restock request (${item.pendingRestockUnits} units, Status: ${item.pendingRestockStatus || "Requested"}). Can only request again once Received.`
-                                  : "Request Restock for this SKU"
-                              }
-                              aria-label="Request Restock"
-                            >
-                              <PackagePlus className="w-3.5 h-3.5" />
                             </button>
                           )}
 
@@ -3095,31 +2917,6 @@ function SkuManagement() {
               )}
               <button
                 type="button"
-                onClick={() => handleOpenRestockModal(selectedSku)}
-                className={`text-xs flex items-center gap-1.5 px-3 py-2 rounded-lg font-medium transition-colors ${
-                  selectedSku.hasPendingRestock
-                    ? "bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-100"
-                    : "btn-secondary text-blue-700 hover:text-blue-800"
-                }`}
-                title={
-                  selectedSku.hasPendingRestock
-                    ? `Active restock request (${selectedSku.pendingRestockUnits} units, Status: ${selectedSku.pendingRestockStatus || "Requested"}). Can only request again once Received.`
-                    : "Request Restock"
-                }
-              >
-                {selectedSku.hasPendingRestock ? (
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                ) : (
-                  <PackagePlus className="w-3.5 h-3.5" />
-                )}
-                <span>
-                  {selectedSku.hasPendingRestock
-                    ? `Restock: ${selectedSku.pendingRestockUnits} (${selectedSku.pendingRestockStatus || "Requested"})`
-                    : "Request Restock"}
-                </span>
-              </button>
-              <button
-                type="button"
                 onClick={() => handleOpenEditModal(selectedSku)}
                 className="btn-primary text-xs"
               >
@@ -3267,272 +3064,6 @@ function SkuManagement() {
                 Min: {createdSkuInfo.minimumLevel} | Reorder:{" "}
                 {createdSkuInfo.reorderLevel} | Max:{" "}
                 {createdSkuInfo.maximumLevel}
-              </p>
-            </div>
-          )
-        }
-        confirmText="Done"
-      />
-
-      {/* ======================================================== */}
-      {/* 7. RESTOCK REQUEST MODAL (Pharmacist to Procurement)      */}
-      {/* ======================================================== */}
-      <Modal
-        isOpen={modalMode === "restock"}
-        onClose={handleCloseModal}
-        title="Request Stock Replenishment"
-        size="lg"
-      >
-        <form onSubmit={handleSaveRestockRequest} className="space-y-4">
-          {/* Facility Assignment Badge */}
-          <div className="flex items-center gap-2.5 p-3 rounded-xl bg-blue-50/60 border border-blue-100 text-xs">
-            <Building2 className="w-4 h-4 text-blue-600 shrink-0" />
-            <div className="min-w-0 flex-1">
-              <span className="font-bold text-gray-900 block truncate">
-                Target Facility: {currentFacilityName}
-              </span>
-              <span className="text-[11px] text-blue-700 font-medium">
-                This replenishment request will be routed to Procurement for
-                ordering.
-              </span>
-            </div>
-          </div>
-
-          {/* SKU Selection */}
-          <div>
-            <Dropdown
-              id="restock-skuId"
-              name="skuId"
-              label="Select Target SKU"
-              required
-              placeholder={
-                isLoadingDropdownSkus
-                  ? "Loading SKUs for facility..."
-                  : "-- Select SKU to Replenish --"
-              }
-              value={restockFormData.skuId}
-              error={formErrors.skuId}
-              disabled={isLoadingDropdownSkus}
-              onChange={(e) => {
-                const id = e.target.value;
-                const found =
-                  dropdownSkus.find((s) => String(s.id) === String(id)) ||
-                  (selectedSku && String(selectedSku.id) === String(id)
-                    ? selectedSku
-                    : null);
-                setSelectedSku(found || null);
-                setRestockFormData((prev) => ({
-                  ...prev,
-                  skuId: id,
-                  requestedUnits:
-                    prev.requestedUnits ||
-                    (found?.maximumLevel && found?.currentStock !== undefined
-                      ? Math.max(1, found.maximumLevel - found.currentStock)
-                      : ""),
-                }));
-                clearError("skuId");
-              }}
-              options={dropdownSkus.map((s) => ({
-                value: s.id,
-                label: `${s.hasPendingRestock ? `[ACTIVE RESTOCK: ${s.pendingRestockUnits} units (${s.pendingRestockStatus || "Requested"})] ` : ""}${s.sku} — ${s.brandName} (${s.genericName}) [Current: ${s.currentStock}, Max: ${s.maximumLevel}]`,
-              }))}
-            />
-          </div>
-
-          {/* Active Restock Warning Banner inside Restock Modal */}
-          {selectedSku && selectedSku.hasPendingRestock && (
-            <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold block text-amber-900 text-xs">
-                  Active Restock Request Already In Progress
-                </span>
-                <p className="text-[11px] text-amber-800 mt-0.5">
-                  This SKU already has an active restock request for{" "}
-                  <strong>{selectedSku.pendingRestockUnits} units</strong>{" "}
-                  (Status:{" "}
-                  <strong className="uppercase">
-                    {selectedSku.pendingRestockStatus || "Requested"}
-                  </strong>
-                  ). Per inventory control rules, a new restock request can only
-                  be submitted once the current order has been{" "}
-                  <strong>Received</strong>.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* Selected SKU Inventory Summary card if SKU is chosen */}
-          {selectedSku && (
-            <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs grid grid-cols-2 sm:grid-cols-4 gap-2">
-              <div>
-                <span className="text-gray-400 block text-[10px] uppercase font-bold">
-                  Current Stock
-                </span>
-                <span className="font-bold text-gray-800 text-sm">
-                  {selectedSku.currentStock ?? 0}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-400 block text-[10px] uppercase font-bold">
-                  Min Threshold
-                </span>
-                <span className="font-bold text-red-600 text-sm">
-                  {selectedSku.minimumLevel ?? 0}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-400 block text-[10px] uppercase font-bold">
-                  Reorder Trigger
-                </span>
-                <span className="font-bold text-amber-600 text-sm">
-                  {selectedSku.reorderLevel ?? 0}
-                </span>
-              </div>
-              <div>
-                <span className="text-gray-400 block text-[10px] uppercase font-bold">
-                  Max Capacity
-                </span>
-                <span className="font-bold text-emerald-600 text-sm">
-                  {selectedSku.maximumLevel ?? 0}
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Requested Units */}
-          <div>
-            <label
-              htmlFor="restock-requestedUnits"
-              className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-            >
-              Requested Quantity (Units) <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="number"
-              id="restock-requestedUnits"
-              name="requestedUnits"
-              min="1"
-              step="1"
-              value={restockFormData.requestedUnits}
-              onChange={(e) => {
-                setRestockFormData((prev) => ({
-                  ...prev,
-                  requestedUnits: e.target.value,
-                }));
-                clearError("requestedUnits");
-              }}
-              placeholder="e.g. 500"
-              className={`input w-full ${formErrors.requestedUnits ? "border-red-500 focus:ring-red-500" : ""}`}
-              required
-            />
-            {formErrors.requestedUnits && (
-              <p className="text-[11px] text-red-500 font-medium mt-1">
-                {formErrors.requestedUnits}
-              </p>
-            )}
-          </div>
-
-          {/* Reason / Clinical Justification */}
-          <div>
-            <label
-              htmlFor="restock-reason"
-              className="block text-xs font-semibold text-gray-700 uppercase tracking-wider mb-1.5"
-            >
-              Reason / Justification Notes
-            </label>
-            <textarea
-              id="restock-reason"
-              name="reason"
-              rows="3"
-              value={restockFormData.reason}
-              onChange={(e) =>
-                setRestockFormData((prev) => ({
-                  ...prev,
-                  reason: e.target.value,
-                }))
-              }
-              placeholder="e.g. Critical stock deficit reached; urgent high patient consumption anticipated."
-              className="input w-full resize-none text-xs"
-            />
-          </div>
-
-          {/* Form Actions */}
-          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
-            <button
-              type="button"
-              onClick={handleCloseModal}
-              disabled={isRestockSubmitting}
-              className="btn-secondary text-xs"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={isRestockSubmitting || selectedSku?.hasPendingRestock}
-              className={`text-xs flex items-center gap-1.5 ${
-                selectedSku?.hasPendingRestock
-                  ? "bg-gray-200 text-gray-400 cursor-not-allowed px-4 py-2 rounded-lg font-medium"
-                  : "btn-primary"
-              }`}
-              title={
-                selectedSku?.hasPendingRestock
-                  ? "Restock request already active until Received"
-                  : ""
-              }
-            >
-              {isRestockSubmitting ? (
-                <>
-                  <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  <span>Submitting Request...</span>
-                </>
-              ) : selectedSku?.hasPendingRestock ? (
-                <>
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>Restock Already Active</span>
-                </>
-              ) : (
-                <>
-                  <PackagePlus className="w-3.5 h-3.5" />
-                  <span>Submit Restock Request</span>
-                </>
-              )}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ======================================================== */}
-      {/* 8. RESTOCK REQUEST SUCCESS MODAL                         */}
-      {/* ======================================================== */}
-      <SuccessModal
-        isOpen={isRestockSuccessModalOpen}
-        onClose={() => {
-          setIsRestockSuccessModalOpen(false);
-          setRestockSuccessInfo(null);
-        }}
-        title="Restock Request Submitted!"
-        message="Your replenishment request has been forwarded to Procurement for ordering."
-        details={
-          restockSuccessInfo && (
-            <div className="space-y-1 text-xs">
-              <p>
-                <span className="font-semibold text-emerald-950">
-                  Target SKU:
-                </span>{" "}
-                {restockSuccessInfo.brandName} ({restockSuccessInfo.skuCode})
-              </p>
-              <p>
-                <span className="font-semibold text-emerald-950">
-                  Requested Units:
-                </span>{" "}
-                {restockSuccessInfo.requestedUnits} units
-              </p>
-              <p>
-                <span className="font-semibold text-emerald-950">
-                  Facility:
-                </span>{" "}
-                {restockSuccessInfo.facilityName}
               </p>
             </div>
           )
