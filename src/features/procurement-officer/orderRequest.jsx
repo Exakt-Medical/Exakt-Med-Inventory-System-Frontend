@@ -22,6 +22,8 @@ import {
   ClipboardList,
   User,
   RefreshCw,
+  FileText,
+  XCircle,
 } from "lucide-react";
 
 // Common Components
@@ -40,6 +42,7 @@ import useAuth from "../../hooks/useAuth";
 import skuService from "../../services/sku";
 import supplierService from "../../services/supplier";
 import orderService from "../../services/order";
+import reorderQuotationService from "../../services/reorderQuotation";
 
 const extractDosageFromDescription = (description) => {
   if (!description) return "";
@@ -258,6 +261,284 @@ function OrderRequest() {
 
   // Additional SKU Selector inside Modal
   const [skuToAdd, setSkuToAdd] = useState("");
+
+  // Navigation Tabs: "quotations" | "thresholds"
+  const [activeTab, setActiveTab] = useState("quotations");
+
+  // Reorder Quotations State
+  const [quotations, setQuotations] = useState([]);
+  const [isLoadingQuotations, setIsLoadingQuotations] = useState(true);
+  const [quotationSearchQuery, setQuotationSearchQuery] = useState("");
+  const [quotationStatusFilter, setQuotationStatusFilter] = useState("ALL");
+  const [quotationPriorityFilter, setQuotationPriorityFilter] = useState("ALL");
+  const [quotationCurrentPage, setQuotationCurrentPage] = useState(1);
+  const [quotationTotalPages, setQuotationTotalPages] = useState(1);
+  const [quotationTotalElements, setQuotationTotalElements] = useState(0);
+
+  // Conversion / PO Generation Modal State
+  const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
+  const [quotationToConvert, setQuotationToConvert] = useState(null);
+  const [convertFormData, setConvertFormData] = useState({
+    supplierId: "",
+    priority: "Normal",
+    notes: "",
+    items: [],
+  });
+  const [isSubmittingConversion, setIsSubmittingConversion] = useState(false);
+  const [convertFormErrors, setConvertFormErrors] = useState({});
+
+  // Reject Quotation Modal State
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [quotationToReject, setQuotationToReject] = useState(null);
+  const [rejectionReason, setRejectionReason] = useState("");
+  const [isSubmittingReject, setIsSubmittingReject] = useState(false);
+
+  // View Quotation Details Modal State
+  const [selectedQuotationForView, setSelectedQuotationForView] = useState(null);
+  const [isViewQuotationModalOpen, setIsViewQuotationModalOpen] = useState(false);
+
+  // Fetch Reorder Quotations Paginated
+  const fetchQuotations = useCallback(
+    async (page = 1, search = "") => {
+      if (!targetPharmacyId) {
+        setQuotations([]);
+        setIsLoadingQuotations(false);
+        return;
+      }
+      try {
+        setIsLoadingQuotations(true);
+        const data = await reorderQuotationService.getQuotationsPaginated({
+          pharmacyId: targetPharmacyId,
+          status:
+            quotationStatusFilter !== "ALL" ? quotationStatusFilter : undefined,
+          priority:
+            quotationPriorityFilter !== "ALL"
+              ? quotationPriorityFilter
+              : undefined,
+          search: search ? search.trim() : undefined,
+          page: Math.max(0, page - 1),
+          size: 6,
+          sortBy: "createdAt",
+          sortDir: "DESC",
+        });
+
+        if (data && Array.isArray(data.content)) {
+          setQuotations(data.content);
+          setQuotationTotalPages(data.totalPages || 1);
+          setQuotationTotalElements(data.totalElements || 0);
+        } else {
+          setQuotations([]);
+          setQuotationTotalPages(1);
+          setQuotationTotalElements(0);
+        }
+      } catch (err) {
+        console.error("Failed to load quotations:", err);
+      } finally {
+        setIsLoadingQuotations(false);
+      }
+    },
+    [targetPharmacyId, quotationStatusFilter, quotationPriorityFilter],
+  );
+
+  const initialQuotationFetchDone = useRef(false);
+
+  useEffect(() => {
+    if (!initialQuotationFetchDone.current) {
+      initialQuotationFetchDone.current = true;
+      fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+      return;
+    }
+    const timer = setTimeout(() => {
+      fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [fetchQuotations, quotationCurrentPage, quotationSearchQuery]);
+
+  // Count pending quotations awaiting review
+  const pendingQuotationsCount = useMemo(() => {
+    return quotations.filter((q) => q.status === "Pending").length;
+  }, [quotations]);
+
+  // Conversion Handlers (Review quotation, remove SKUs, set prices, convert to PO)
+  const handleOpenConvertModal = (quotation) => {
+    setQuotationToConvert(quotation);
+    setConvertFormData({
+      supplierId: String(quotation.supplierId || ""),
+      priority: quotation.priority || "Normal",
+      notes: quotation.notes || "",
+      items: (quotation.items || []).map((it) => ({
+        skuId: it.skuId,
+        skuCode: it.skuCode,
+        brandName: it.brandName,
+        genericName: it.genericName,
+        dosage: it.dosageStrength || it.dosageForm,
+        packagingUnit: it.packagingUnit,
+        currentStock: it.currentStock,
+        orderedUnits: it.requestedUnits,
+        price: it.estimatedPrice || "",
+      })),
+    });
+    setConvertFormErrors({});
+    setIsConvertModalOpen(true);
+  };
+
+  const handleRemoveItemFromConversion = (skuId) => {
+    setConvertFormData((prev) => ({
+      ...prev,
+      items: prev.items.filter((i) => i.skuId !== skuId),
+    }));
+  };
+
+  const handleUpdateItemQtyInConversion = (skuId, qty) => {
+    setConvertFormData((prev) => ({
+      ...prev,
+      items: prev.items.map((i) =>
+        i.skuId === skuId
+          ? {
+              ...i,
+              orderedUnits:
+                qty === "" ? "" : Math.max(1, parseInt(qty, 10) || 1),
+            }
+          : i,
+      ),
+    }));
+  };
+
+  const handleUpdateItemPriceInConversion = (skuId, price) => {
+    setConvertFormData((prev) => ({
+      ...prev,
+      items: prev.items.map((i) =>
+        i.skuId === skuId ? { ...i, price } : i,
+      ),
+    }));
+  };
+
+  const computedConversionTotalUnits = useMemo(() => {
+    return convertFormData.items.reduce(
+      (sum, i) => sum + (Number(i.orderedUnits) || 0),
+      0,
+    );
+  }, [convertFormData.items]);
+
+  const computedConversionTotalCost = useMemo(() => {
+    return convertFormData.items.reduce(
+      (sum, i) => sum + (Number(i.price) || 0),
+      0,
+    );
+  }, [convertFormData.items]);
+
+  const handleSubmitConversion = async (e) => {
+    e.preventDefault();
+    if (!convertFormData.items || convertFormData.items.length === 0) {
+      setConvertFormErrors({
+        general: "Please include at least one medicine item in the purchase order.",
+      });
+      return;
+    }
+
+    const missingPriceItem = convertFormData.items.find(
+      (it) => !it.price || Number(it.price) <= 0,
+    );
+    if (missingPriceItem) {
+      setConvertFormErrors({
+        general: `Please enter the negotiated total price for "${missingPriceItem.brandName || missingPriceItem.skuCode}" before generating the purchase order.`,
+      });
+      return;
+    }
+
+    try {
+      setIsSubmittingConversion(true);
+      const payload = {
+        supplierId: Number(convertFormData.supplierId),
+        priority: convertFormData.priority,
+        notes: convertFormData.notes,
+        totalPrice: computedConversionTotalCost,
+        items: convertFormData.items.map((i) => ({
+          skuId: i.skuId,
+          orderedUnits: Number(i.orderedUnits) || 1,
+          price: Number(i.price) || 0,
+        })),
+      };
+
+      const result = await reorderQuotationService.convertToOrder(
+        quotationToConvert.id,
+        payload,
+      );
+
+      setIsConvertModalOpen(false);
+
+      // Show success modal with the created PO
+      setSubmittedOrder({
+        orderId: result.purchaseOrderNum || `PO-${Date.now()}`,
+        status: "Pending",
+        supplierName: result.supplierName || "Assigned Supplier",
+        targetFacility: currentFacilityName,
+        totalCost: computedConversionTotalCost,
+        totalUnits: computedConversionTotalUnits,
+        items: convertFormData.items.map((i) => ({
+          sku: i.skuCode,
+          brandName: i.brandName,
+          dosage: i.dosage,
+          quantity: i.orderedUnits,
+          price: i.price,
+        })),
+      });
+      setModalMode("success");
+      fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+      fetchSkus(searchQuery);
+    } catch (err) {
+      console.error("Failed to convert quotation to PO:", err);
+      setConvertFormErrors({
+        general:
+          err.response?.data?.message ||
+          err.message ||
+          "Failed to convert quotation. Please try again.",
+      });
+    } finally {
+      setIsSubmittingConversion(false);
+    }
+  };
+
+  // Reject Modal Handlers
+  const handleOpenRejectModal = (quotation) => {
+    setQuotationToReject(quotation);
+    setRejectionReason("");
+    setIsRejectModalOpen(true);
+  };
+
+  const handleSubmitReject = async (e) => {
+    e.preventDefault();
+    if (!rejectionReason.trim()) return;
+    try {
+      setIsSubmittingReject(true);
+      await reorderQuotationService.rejectQuotation(quotationToReject.id, {
+        rejectionReason: rejectionReason.trim(),
+      });
+      setIsRejectModalOpen(false);
+      setQuotationToReject(null);
+      fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+    } catch (err) {
+      console.error("Failed to reject quotation:", err);
+      alert(
+        err.response?.data?.message ||
+          "Failed to reject quotation. Please try again.",
+      );
+    } finally {
+      setIsSubmittingReject(false);
+    }
+  };
+
+  // View Quotation Details
+  const handleOpenViewQuotationModal = async (quotation) => {
+    try {
+      const full = await reorderQuotationService.getQuotationById(quotation.id);
+      setSelectedQuotationForView(full);
+    } catch (err) {
+      console.error("Failed to load quotation details:", err);
+      setSelectedQuotationForView(quotation);
+    }
+    setIsViewQuotationModalOpen(true);
+  };
 
   // 1. Total Minimum SKUs for Current Facility (currentStock <= minimumLevel)
   const totalMinimumSkus = useMemo(() => {
@@ -660,13 +941,16 @@ function OrderRequest() {
             type="button"
             onClick={() => {
               fetchSkus(searchQuery);
+              fetchQuotations(quotationCurrentPage, quotationSearchQuery);
             }}
-            disabled={isLoadingSkus}
-            className="p-2 border border-gray-200 bg-white hover:bg-gray-50 text-gray-600 rounded-lg shadow-xs transition-colors cursor-pointer disabled:opacity-50"
-            title="Refresh SKUs"
+            disabled={isLoadingSkus || isLoadingQuotations}
+            className="btn-secondary p-2.5 text-gray-600 hover:text-blue-600 shadow-xs"
+            title="Refresh All"
           >
             <RefreshCw
-              className={`w-4 h-4 ${isLoadingSkus ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${
+                isLoadingSkus || isLoadingQuotations ? "animate-spin" : ""
+              }`}
             />
           </button>
           <button
@@ -710,7 +994,10 @@ function OrderRequest() {
                   {totalMinimumSkus > 0 && (
                     <button
                       type="button"
-                      onClick={handleSelectAllCritical}
+                      onClick={() => {
+                        setActiveTab("thresholds");
+                        handleSelectAllCritical();
+                      }}
                       className="text-[11px] font-bold text-red-700 underline hover:text-red-900 cursor-pointer"
                     >
                       Select Critical
@@ -745,9 +1032,20 @@ function OrderRequest() {
                 <h3 className="text-3xl font-extrabold text-amber-600 mt-1.5">
                   {totalNeedsReorderSkus}
                 </h3>
-                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 mt-1 bg-amber-100/70 px-2 py-0.5 rounded-full">
-                  <Clock className="w-3 h-3" /> &le; Reorder point
-                </span>
+                <div className="flex items-center gap-2 mt-1">
+                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                    <Clock className="w-3 h-3" /> &le; Reorder point
+                  </span>
+                  {totalNeedsReorderSkus > 0 && activeTab !== "thresholds" && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("thresholds")}
+                      className="text-[11px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                    >
+                      View Alerts
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 border border-amber-200 shadow-xs">
                 <ShoppingCart className="w-6 h-6" />
@@ -756,9 +1054,9 @@ function OrderRequest() {
           )}
         </Card>
 
-        {/* 3. Total Alert Items */}
+        {/* 3. Pending Pharmacist Quotations */}
         <Card className="p-5 border border-blue-200/80 shadow-xs hover:border-blue-300 transition-all bg-linear-to-br from-white to-blue-50/20">
-          {isLoadingSkus ? (
+          {isLoadingQuotations ? (
             <div className="flex items-center justify-between">
               <div className="space-y-2 flex-1">
                 <Skeleton className="h-3.5 w-36 bg-blue-200/60" />
@@ -771,42 +1069,392 @@ function OrderRequest() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                  Total Alert Items
+                  Pharmacist Quotations
                 </p>
                 <h3 className="text-3xl font-extrabold text-blue-600 mt-1.5">
-                  {reorderSkus.length}
+                  {pendingQuotationsCount}
                 </h3>
                 <div className="flex items-center gap-2 mt-1">
                   <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-100/70 px-2 py-0.5 rounded-full">
-                    <Layers className="w-3 h-3" /> Filtered Alerts
+                    <Clock className="w-3 h-3" /> Awaiting Review
                   </span>
+                  {activeTab !== "quotations" && (
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("quotations")}
+                      className="text-[11px] font-bold text-blue-700 underline hover:text-blue-900 cursor-pointer"
+                    >
+                      Review Quotations
+                    </button>
+                  )}
                 </div>
               </div>
               <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 border border-blue-200 shadow-xs">
-                <Layers className="w-6 h-6" />
+                <FileText className="w-6 h-6" />
               </div>
             </div>
           )}
         </Card>
       </div>
 
-      {/* Main Workspace Card */}
+      {/* Main Workspace Card with Navigation Tabs */}
       <Card className="p-0 overflow-hidden border border-gray-200 animate-slide-up-2">
-        <div className="border-b border-gray-200 bg-gray-50/75 px-5 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-2 font-bold text-gray-900 text-sm">
-            <AlertTriangle className="w-4 h-4 text-amber-500" />
+        {/* Navigation Tabs Header */}
+        <div className="flex border-b border-gray-200 bg-gray-50/75 px-4 pt-3 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("quotations")}
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === "quotations"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Pharmacist Reorder Quotations</span>
+            {pendingQuotationsCount > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-blue-600 text-white shadow-xs">
+                {pendingQuotationsCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("thresholds")}
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === "thresholds"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
             <span>System Threshold Alerts</span>
             {reorderSkus.length > 0 && (
               <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500 text-white shadow-xs">
                 {reorderSkus.length}
               </span>
             )}
-          </div>
+          </button>
         </div>
 
-        <div>
-          {/* Search & Filter Bar */}
-          <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 bg-gray-50/50">
+        {/* TAB 1: PHARMACIST REORDER QUOTATIONS */}
+        {activeTab === "quotations" && (
+          <div>
+            {/* Search & Filter Bar */}
+            <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 bg-gray-50/50">
+              <div className="w-full md:w-80">
+                <SearchBar
+                  value={quotationSearchQuery}
+                  onChange={(e) => {
+                    setQuotationSearchQuery(e.target.value);
+                    setQuotationCurrentPage(1);
+                  }}
+                  onClear={() => {
+                    setQuotationSearchQuery("");
+                    setQuotationCurrentPage(1);
+                  }}
+                  placeholder="Search quotation #, supplier, requester..."
+                />
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap sm:flex-nowrap">
+                <Dropdown
+                  value={quotationStatusFilter}
+                  onChange={(e) => {
+                    setQuotationStatusFilter(e.target.value);
+                    setQuotationCurrentPage(1);
+                  }}
+                  size="sm"
+                  className="w-full sm:w-40"
+                  options={[
+                    { value: "ALL", label: "All Statuses" },
+                    { value: "Pending", label: "Pending Review" },
+                    { value: "Approved", label: "Approved (PO Created)" },
+                    { value: "Rejected", label: "Rejected" },
+                    { value: "Cancelled", label: "Cancelled" },
+                  ]}
+                />
+
+                <Dropdown
+                  value={quotationPriorityFilter}
+                  onChange={(e) => {
+                    setQuotationPriorityFilter(e.target.value);
+                    setQuotationCurrentPage(1);
+                  }}
+                  size="sm"
+                  className="w-full sm:w-36"
+                  options={[
+                    { value: "ALL", label: "All Priorities" },
+                    { value: "Normal", label: "Normal Priority" },
+                    { value: "Urgent", label: "Urgent Priority" },
+                  ]}
+                />
+              </div>
+            </div>
+
+            {/* Quotations Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200">
+                  <tr>
+                    <th scope="col" className="px-6 py-3.5">
+                      Quotation # & Date
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Requester & Target Supplier
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Medicines & Units
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Priority
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Status & PO Ref
+                    </th>
+                    <th scope="col" className="px-6 py-3.5 text-right">
+                      Actions
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {isLoadingQuotations ? (
+                    Array.from({ length: 5 }).map((_, index) => (
+                      <tr
+                        key={`quote-skeleton-${index}`}
+                        className="animate-pulse"
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-4 w-28 rounded" />
+                          <Skeleton className="h-3 w-20 mt-1" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-4 w-36" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-4 w-24" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-5 w-16 rounded-full" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-6 w-28 rounded-full" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <Skeleton className="h-8 w-24 ml-auto rounded-lg" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : quotations.length > 0 ? (
+                    quotations.map((quotation, index) => {
+                      const isPending = quotation.status === "Pending";
+                      return (
+                        <tr
+                          key={quotation.id}
+                          className="hover:bg-blue-50/30 transition-colors animate-slide-up"
+                          style={{ animationDelay: `${index * 0.04}s` }}
+                        >
+                          {/* Quotation # & Date */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="font-mono text-xs font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded">
+                              {quotation.quotationNumber}
+                            </span>
+                            <div className="flex items-center gap-1 text-xs text-gray-400 mt-1">
+                              <Calendar className="w-3.5 h-3.5" />
+                              <span>
+                                {quotation.createdAt
+                                  ? new Date(
+                                      quotation.createdAt,
+                                    ).toLocaleDateString(undefined, {
+                                      year: "numeric",
+                                      month: "short",
+                                      day: "numeric",
+                                    })
+                                  : "—"}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Requester & Supplier */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5 font-semibold text-gray-900 text-xs">
+                              <Truck className="w-4 h-4 text-gray-400 shrink-0" />
+                              <span>
+                                {quotation.supplierName || "Unassigned"}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1 text-[11px] text-gray-500 mt-0.5">
+                              <User className="w-3 h-3 text-gray-400" />
+                              <span>
+                                By: {quotation.userName || "Pharmacist"}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Medicines & Total Units */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-xs font-bold text-gray-800">
+                              {quotation.items?.length || 0} Medicine
+                              {(quotation.items?.length || 0) !== 1 ? "s" : ""}
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-0.5 font-mono">
+                              {Number(
+                                quotation.totalUnits || 0,
+                              ).toLocaleString()}{" "}
+                              units
+                            </div>
+                          </td>
+
+                          {/* Priority */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                quotation.priority === "Urgent"
+                                  ? "bg-red-50 text-red-700 border border-red-200"
+                                  : "bg-blue-50 text-blue-700 border border-blue-200"
+                              }`}
+                            >
+                              {quotation.priority || "Normal"}
+                            </span>
+                          </td>
+
+                          {/* Status & PO Ref */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${
+                                quotation.status === "Pending"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : quotation.status === "Approved"
+                                    ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                    : quotation.status === "Rejected"
+                                      ? "bg-red-50 text-red-800 border-red-200"
+                                      : "bg-gray-100 text-gray-700 border-gray-200"
+                              }`}
+                            >
+                              {quotation.status === "Approved" ? (
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              ) : quotation.status === "Rejected" ? (
+                                <XCircle className="w-3.5 h-3.5" />
+                              ) : (
+                                <Clock className="w-3.5 h-3.5" />
+                              )}
+                              <span>
+                                {quotation.status === "Approved"
+                                  ? "Approved (PO Created)"
+                                  : quotation.status}
+                              </span>
+                            </span>
+                            {quotation.purchaseOrderNum && (
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="text-[11px] text-emerald-700 font-mono font-semibold">
+                                  PO: {quotation.purchaseOrderNum}
+                                </span>
+                                {quotation.purchaseOrderStatus && (
+                                  <span
+                                    className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
+                                      quotation.purchaseOrderStatus === "Received"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : quotation.purchaseOrderStatus === "Approved"
+                                          ? "bg-blue-100 text-blue-800"
+                                          : quotation.purchaseOrderStatus === "Partially_Received"
+                                            ? "bg-purple-100 text-purple-800"
+                                            : quotation.purchaseOrderStatus === "Denied"
+                                              ? "bg-red-100 text-red-800"
+                                              : "bg-amber-100 text-amber-800"
+                                    }`}
+                                  >
+                                    {quotation.purchaseOrderStatus.replace("_", " ")}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenViewQuotationModal(quotation)
+                                }
+                                className="btn-secondary p-1.5 text-gray-600 hover:text-blue-600 cursor-pointer"
+                                title="View Quotation Details"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              {isPending && (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenConvertModal(quotation)
+                                    }
+                                    className="btn-primary py-1.5 px-3 text-xs shadow-xs"
+                                    title="Review items and convert into Purchase Order"
+                                  >
+                                    <ShoppingCart className="w-3.5 h-3.5" />
+                                    <span>Process into PO</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenRejectModal(quotation)
+                                    }
+                                    className="btn-secondary p-1.5 text-gray-500 hover:text-red-600 cursor-pointer"
+                                    title="Reject Quotation"
+                                  >
+                                    <XCircle className="w-3.5 h-3.5" />
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="px-6 py-12 text-center text-gray-400"
+                      >
+                        <CheckCircle2 className="w-9 h-9 mx-auto mb-2 text-emerald-500" />
+                        <p className="text-base font-semibold text-gray-800">
+                          No pending pharmacist reorder quotations!
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          All submitted replenishment quotations have been
+                          processed or reviewed.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination for Quotations */}
+            {quotationTotalElements > 0 && (
+              <div className="p-4 border-t border-gray-100 bg-gray-50/40">
+                <Pagination
+                  currentPage={quotationCurrentPage}
+                  totalPages={quotationTotalPages}
+                  totalItems={quotationTotalElements}
+                  itemsPerPage={6}
+                  onPageChange={setQuotationCurrentPage}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB 2: SYSTEM THRESHOLD ALERTS */}
+        {activeTab === "thresholds" && (
+          <div>
+            {/* Search & Filter Bar */}
+            <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 bg-gray-50/50">
               <div className="w-full md:w-80">
                 <SearchBar
                   value={searchQuery}
@@ -1139,6 +1787,7 @@ function OrderRequest() {
               </div>
             )}
           </div>
+        )}
       </Card>
 
       {/* ======================================================== */}
@@ -1729,6 +2378,630 @@ function OrderRequest() {
                 <PackagePlus className="w-3.5 h-3.5" />
                 <span>Create Order Request</span>
               </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* 4. MODAL: REVIEW QUOTATION & CONVERT TO PURCHASE ORDER   */}
+      {/* ======================================================== */}
+      <Modal
+        isOpen={isConvertModalOpen && Boolean(quotationToConvert)}
+        onClose={() => setIsConvertModalOpen(false)}
+        title={`Review & Convert to Purchase Order (${quotationToConvert?.quotationNumber})`}
+        size="4xl"
+      >
+        {quotationToConvert && (
+          <form onSubmit={handleSubmitConversion} className="space-y-4 text-xs">
+            {convertFormErrors.general && (
+              <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs">
+                {convertFormErrors.general}
+              </div>
+            )}
+
+            {/* Banner: Quotation Origin & Pharmacist Note */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-blue-50/80 border border-blue-200">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white font-bold shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-900 text-sm">
+                      Quotation #{quotationToConvert.quotationNumber}
+                    </span>
+                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                      Pending Conversion
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-500">
+                    Requested by:{" "}
+                    <strong>{quotationToConvert.userName || "Pharmacist"}</strong>{" "}
+                    for{" "}
+                    <strong>
+                      {quotationToConvert.supplierName || "Assigned Supplier"}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                  Requisition Priority
+                </span>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                    quotationToConvert.priority === "Urgent"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}
+                >
+                  {quotationToConvert.priority || "Normal"}
+                </span>
+              </div>
+            </div>
+
+            {/* Pharmacist Clinical Justification */}
+            {quotationToConvert.notes && (
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-200 text-xs text-gray-700 italic">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-gray-400 block mb-0.5 not-italic">
+                  Pharmacist Clinical Justification:
+                </span>
+                "{quotationToConvert.notes}"
+              </div>
+            )}
+
+            {/* Procurement Order Settings */}
+            <div className="p-4 rounded-xl bg-gray-50 border border-gray-200/80 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <div>
+                <Dropdown
+                  id="convert-supplier"
+                  label="Target Supplier"
+                  required
+                  value={convertFormData.supplierId}
+                  onChange={(e) =>
+                    setConvertFormData((prev) => ({
+                      ...prev,
+                      supplierId: e.target.value,
+                    }))
+                  }
+                  size="sm"
+                  options={activeSuppliers.map((s) => ({
+                    value: s.id,
+                    label: s.name,
+                  }))}
+                />
+              </div>
+
+              <div>
+                <Dropdown
+                  id="convert-priority"
+                  label="Order Priority"
+                  required
+                  value={convertFormData.priority}
+                  onChange={(e) =>
+                    setConvertFormData((prev) => ({
+                      ...prev,
+                      priority: e.target.value,
+                    }))
+                  }
+                  size="sm"
+                  options={[
+                    { value: "Normal", label: "Normal (Standard Lead Time)" },
+                    { value: "Urgent", label: "Urgent (Priority Emergency)" },
+                  ]}
+                />
+              </div>
+
+              <div className="sm:col-span-2">
+                <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+                  Procurement Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={convertFormData.notes}
+                  onChange={(e) =>
+                    setConvertFormData((prev) => ({
+                      ...prev,
+                      notes: e.target.value,
+                    }))
+                  }
+                  placeholder="Notes for vendor or delivery instructions..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-blue-500 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Line Items Table with SKU Removal and Price Editing */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-bold uppercase tracking-wider text-gray-800">
+                    PO Line Items ({convertFormData.items.length})
+                  </span>
+                  <span className="text-[11px] text-gray-400 ml-2">
+                    Procurement may remove SKUs, calibrate units, or adjust prices
+                  </span>
+                </div>
+                <div className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                  Total Units: {computedConversionTotalUnits.toLocaleString()}
+                </div>
+              </div>
+
+              {convertFormErrors.items && (
+                <p className="text-xs text-red-500">{convertFormErrors.items}</p>
+              )}
+
+              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+                <table className="w-full text-left text-xs text-gray-600">
+                  <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
+                    <tr>
+                      <th className="px-3.5 py-2.5">Medication & SKU</th>
+                      <th className="px-3.5 py-2.5 w-24">Current Stock</th>
+                      <th className="px-3.5 py-2.5 w-28">Order Units *</th>
+                      <th className="px-3.5 py-2.5 w-32">Total Price (₱) *</th>
+                      <th className="px-3.5 py-2.5 w-28 text-right">Price / Unit</th>
+                      <th className="px-3.5 py-2.5 w-10 text-center">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 bg-white">
+                    {convertFormData.items.length > 0 ? (
+                      convertFormData.items.map((item) => {
+                        const qty = Number(item.orderedUnits) || 0;
+                        const priceVal =
+                          item.price !== "" && !isNaN(Number(item.price))
+                            ? Number(item.price)
+                            : null;
+                        const unitPrice =
+                          priceVal !== null && qty > 0 ? priceVal / qty : null;
+
+                        return (
+                          <tr key={item.skuId} className="hover:bg-gray-50/80">
+                            {/* Medication info */}
+                            <td className="px-3.5 py-2.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-gray-900">
+                                  {item.brandName || item.skuCode}
+                                </span>
+                                <span className="font-mono text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
+                                  {item.skuCode}
+                                </span>
+                              </div>
+                              <div className="text-[11px] text-gray-500">
+                                {item.genericName} {item.dosage && `• ${item.dosage}`}
+                              </div>
+                            </td>
+
+                            {/* Current Stock */}
+                            <td className="px-3.5 py-2.5 font-mono text-gray-700">
+                              {item.currentStock ?? "—"}
+                            </td>
+
+                            {/* Order Units (Editable) */}
+                            <td className="px-3.5 py-2.5">
+                              <input
+                                type="number"
+                                min="1"
+                                value={item.orderedUnits}
+                                onChange={(e) =>
+                                  handleUpdateItemQtyInConversion(
+                                    item.skuId,
+                                    e.target.value,
+                                  )
+                                }
+                                required
+                                className="w-24 px-2 py-1 border border-gray-300 rounded font-bold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                              />
+                            </td>
+
+                            {/* Total Price (Editable - Required for Procurement) */}
+                            <td className="px-3.5 py-2.5">
+                              <input
+                                type="number"
+                                min="0.01"
+                                step="any"
+                                placeholder="Enter total ₱"
+                                value={item.price}
+                                onChange={(e) =>
+                                  handleUpdateItemPriceInConversion(
+                                    item.skuId,
+                                    e.target.value,
+                                  )
+                                }
+                                required
+                                className="w-28 px-2 py-1 border border-gray-300 rounded font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                              />
+                            </td>
+
+                            {/* Calculated Price Per Unit */}
+                            <td className="px-3.5 py-2.5 text-right font-mono text-gray-700">
+                              {unitPrice !== null
+                                ? `₱${unitPrice.toLocaleString(undefined, {
+                                    minimumFractionDigits: 2,
+                                    maximumFractionDigits: 2,
+                                  })}`
+                                : "—"}
+                            </td>
+
+                            {/* Remove SKU Button */}
+                            <td className="px-3.5 py-2.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleRemoveItemFromConversion(item.skuId)
+                                }
+                                className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-1"
+                                title="Remove this SKU from the purchase order"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="px-4 py-8 text-center text-gray-400"
+                        >
+                          All SKUs have been removed. At least one SKU is required
+                          to convert to a purchase order.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+              <div className="text-xs text-gray-600 font-medium">
+                <span>
+                  Total Quoted Cost:{" "}
+                  <strong className="text-emerald-700 font-mono text-sm">
+                    ₱{computedConversionTotalCost.toLocaleString(undefined, {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </span>
+                <span className="ml-2 text-gray-400">
+                  (New PO status will be <strong>Pending</strong>)
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsConvertModalOpen(false)}
+                  className="btn-secondary text-xs"
+                  disabled={isSubmittingConversion}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={
+                    isSubmittingConversion || convertFormData.items.length === 0
+                  }
+                  className="btn-primary text-xs flex items-center gap-1.5 shadow-xs disabled:opacity-50"
+                >
+                  {isSubmittingConversion ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Converting to PO...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShoppingCart className="w-3.5 h-3.5" />
+                      <span>Convert to Purchase Order</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </form>
+        )}
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* 5. MODAL: REJECT QUOTATION                               */}
+      {/* ======================================================== */}
+      <Modal
+        isOpen={isRejectModalOpen && Boolean(quotationToReject)}
+        onClose={() => setIsRejectModalOpen(false)}
+        title={`Reject Quotation (${quotationToReject?.quotationNumber})`}
+        size="md"
+      >
+        <form onSubmit={handleSubmitReject} className="space-y-4 text-xs">
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-900">
+            <p className="font-bold">
+              Reject Reorder Quotation #{quotationToReject?.quotationNumber}?
+            </p>
+            <p className="text-[11px] text-red-700 mt-1">
+              Please state why this replenishment quotation cannot be converted
+              into a purchase order (e.g. stock surplus, budget limit, or
+              unapproved vendor).
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1">
+              Rejection Reason *
+            </label>
+            <textarea
+              rows="3"
+              required
+              value={rejectionReason}
+              onChange={(e) => setRejectionReason(e.target.value)}
+              placeholder="Enter explanation for the requesting pharmacist..."
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-red-500 bg-white resize-none"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => setIsRejectModalOpen(false)}
+              className="btn-secondary text-xs"
+              disabled={isSubmittingReject}
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmittingReject || !rejectionReason.trim()}
+              className="btn-danger text-xs flex items-center gap-1.5 shadow-xs"
+            >
+              {isSubmittingReject ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                  <span>Rejecting...</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>Reject Quotation</span>
+                </>
+              )}
+            </button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* 6. MODAL: VIEW QUOTATION DETAILS                         */}
+      {/* ======================================================== */}
+      <Modal
+        isOpen={isViewQuotationModalOpen && Boolean(selectedQuotationForView)}
+        onClose={() => setIsViewQuotationModalOpen(false)}
+        title="Pharmacist Reorder Quotation Details"
+        size="3xl"
+      >
+        {selectedQuotationForView && (
+          <div className="space-y-4 text-xs">
+            {/* Header Status */}
+            <div className="flex items-center justify-between p-3.5 rounded-xl bg-blue-50/80 border border-blue-200">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-600 text-white font-bold shrink-0">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-gray-900 text-sm">
+                      {selectedQuotationForView.quotationNumber}
+                    </span>
+                    <span
+                      className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                        selectedQuotationForView.status === "Pending"
+                          ? "bg-amber-50 text-amber-800 border-amber-200"
+                          : selectedQuotationForView.status === "Approved"
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            : selectedQuotationForView.status === "Rejected"
+                              ? "bg-red-50 text-red-800 border-red-200"
+                              : "bg-gray-100 text-gray-700 border-gray-200"
+                      }`}
+                    >
+                      {selectedQuotationForView.status === "Approved"
+                        ? "Approved (PO Created)"
+                        : selectedQuotationForView.status}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-gray-500">
+                    Vendor:{" "}
+                    <strong>{selectedQuotationForView.supplierName}</strong> •
+                    Requester:{" "}
+                    <strong>
+                      {selectedQuotationForView.userName || "Pharmacist"}
+                    </strong>
+                  </span>
+                </div>
+              </div>
+
+              <div className="text-right">
+                <span className="text-[10px] uppercase font-bold text-gray-400 block">
+                  Priority
+                </span>
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                    selectedQuotationForView.priority === "Urgent"
+                      ? "bg-red-100 text-red-800"
+                      : "bg-blue-100 text-blue-800"
+                  }`}
+                >
+                  {selectedQuotationForView.priority || "Normal"}
+                </span>
+              </div>
+            </div>
+
+            {/* If Converted */}
+            {selectedQuotationForView.purchaseOrderNum && (
+              <div className="p-3.5 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between gap-3 text-emerald-900 flex-wrap">
+                <div className="flex items-center gap-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <p className="font-bold">
+                      Converted into Purchase Order #{selectedQuotationForView.purchaseOrderNum}
+                    </p>
+                    <p className="text-[11px] text-emerald-700">
+                      Procurement Purchase Order generated from this replenishment quotation
+                    </p>
+                  </div>
+                </div>
+                {selectedQuotationForView.purchaseOrderStatus && (
+                  <span
+                    className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border shadow-xs ${
+                      selectedQuotationForView.purchaseOrderStatus === "Received"
+                        ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                        : selectedQuotationForView.purchaseOrderStatus === "Approved"
+                          ? "bg-blue-100 text-blue-800 border-blue-300"
+                          : selectedQuotationForView.purchaseOrderStatus === "Partially_Received"
+                            ? "bg-purple-100 text-purple-800 border-purple-300"
+                            : selectedQuotationForView.purchaseOrderStatus === "Denied"
+                              ? "bg-red-100 text-red-800 border-red-300"
+                              : "bg-amber-100 text-amber-800 border-amber-300"
+                    }`}
+                  >
+                    PO Status: {selectedQuotationForView.purchaseOrderStatus.replace("_", " ")}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {/* If Rejected */}
+            {selectedQuotationForView.rejectionReason && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-900">
+                <XCircle className="w-5 h-5 text-red-600 shrink-0" />
+                <div>
+                  <p className="font-bold">Rejection Reason</p>
+                  <p className="text-[11px] text-red-700 italic">
+                    "{selectedQuotationForView.rejectionReason}"
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* Pharmacist clinical justification */}
+            {selectedQuotationForView.notes && (
+              <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                <span className="text-[10px] uppercase font-bold text-gray-400 block mb-1">
+                  Pharmacist Notes
+                </span>
+                <p className="text-gray-700 italic whitespace-pre-wrap">
+                  "{selectedQuotationForView.notes}"
+                </p>
+              </div>
+            )}
+
+            {/* Items Table */}
+            <div className="border border-gray-200 rounded-xl overflow-hidden">
+              <table className="w-full text-left text-xs text-gray-600">
+                <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200">
+                  <tr>
+                    <th className="px-3.5 py-2.5">Medication & SKU</th>
+                    <th className="px-3.5 py-2.5">Current Stock</th>
+                    <th className="px-3.5 py-2.5">Requested Units</th>
+                    <th className="px-3.5 py-2.5">Quoted Price (₱)</th>
+                    <th className="px-3.5 py-2.5">Remarks</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {(selectedQuotationForView.items || []).map((item) => (
+                    <tr key={item.id || item.skuId} className="hover:bg-gray-50">
+                      <td className="px-3.5 py-2.5">
+                        <div className="font-bold text-gray-900">
+                          {item.brandName || item.skuCode}
+                        </div>
+                        <div className="text-[11px] text-gray-500 font-mono">
+                          {item.skuCode} {item.dosage && `• ${item.dosage}`}
+                        </div>
+                      </td>
+                      <td className="px-3.5 py-2.5 font-mono">
+                        {item.currentStock ?? "—"}
+                      </td>
+                      <td className="px-3.5 py-2.5 font-bold text-blue-700 font-mono">
+                        {item.requestedUnits} units
+                      </td>
+                      <td className="px-3.5 py-2.5 font-mono">
+                        {item.estimatedPrice && Number(item.estimatedPrice) > 0 ? (
+                          <div>
+                            <span className="font-bold text-gray-900">
+                              ₱{Number(item.estimatedPrice).toLocaleString(undefined, {
+                                minimumFractionDigits: 2,
+                                maximumFractionDigits: 2,
+                              })}
+                            </span>
+                            {item.estimatedPricePerUnit > 0 && (
+                              <span className="text-[10px] text-gray-500 block">
+                                ₱{Number(item.estimatedPricePerUnit).toLocaleString(undefined, {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}/unit
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 font-sans">
+                            Pending PO Conversion
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3.5 py-2.5 text-gray-500 italic">
+                        {item.notes || "—"}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between pt-3 border-t border-gray-100 flex-wrap gap-2">
+              <div className="text-xs text-gray-600 font-mono flex items-center gap-3 flex-wrap">
+                <span>
+                  Total units:{" "}
+                  <strong className="text-gray-900">
+                    {Number(selectedQuotationForView.totalUnits || 0).toLocaleString()}
+                  </strong>
+                </span>
+                {selectedQuotationForView.estimatedTotalCost > 0 && (
+                  <span>
+                    Total Quoted Cost:{" "}
+                    <strong className="text-emerald-700 font-bold">
+                      ₱{Number(selectedQuotationForView.estimatedTotalCost).toLocaleString(undefined, {
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </strong>
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsViewQuotationModalOpen(false)}
+                  className="btn-secondary text-xs"
+                >
+                  Close
+                </button>
+                {selectedQuotationForView.status === "Pending" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const quote = selectedQuotationForView;
+                      setIsViewQuotationModalOpen(false);
+                      handleOpenConvertModal(quote);
+                    }}
+                    className="btn-primary text-xs flex items-center gap-1.5"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>Process into PO</span>
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )}

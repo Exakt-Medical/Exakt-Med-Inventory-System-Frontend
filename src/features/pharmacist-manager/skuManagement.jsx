@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import { Link } from "react-router-dom";
 import {
   Boxes,
   Package,
@@ -21,6 +22,7 @@ import {
   User,
   Phone,
   UserPlus,
+  FileText,
 } from "lucide-react";
 
 // Common Components
@@ -1282,6 +1284,13 @@ function SkuManagement() {
               className={`w-4 h-4 ${(isLoadingSkus || isLoadingSummary) ? "animate-spin text-blue-600" : ""}`}
             />
           </button>
+          <Link
+            to="/pharmacist/reorder-quotations"
+            className="btn-secondary self-start sm:self-auto shadow-sm"
+          >
+            <FileText className="w-4 h-4 text-gray-600" />
+            <span>Reorder Quotations</span>
+          </Link>
           <button
             type="button"
             onClick={handleOpenAddModal}
@@ -2950,7 +2959,7 @@ function SkuManagement() {
               <span className="font-bold">
                 {selectedSku.facility || currentFacilityName}
               </span>
-              . It will no longer appear in new orders, restock requests, or active dispensing. Historical inventory records and batches will remain safely preserved.
+              . It will no longer appear in new orders, reorder quotations, or active dispensing. Historical inventory records and batches will remain safely preserved.
             </>
           )
         }

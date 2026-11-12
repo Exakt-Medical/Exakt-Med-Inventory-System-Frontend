@@ -9,6 +9,7 @@ import {
   History,
   DollarSign,
   FileSpreadsheet,
+  FileText,
 } from "lucide-react";
 import { ROLES } from "./roles";
 
@@ -62,6 +63,12 @@ export const NAVIGATION_ITEMS = [
     title: "SKU Management",
     path: "/pharmacist/sku-management",
     icon: Pill,
+    roles: [ROLES.PHARMACIST],
+  },
+  {
+    title: "Reorder Quotations",
+    path: "/pharmacist/reorder-quotations",
+    icon: FileText,
     roles: [ROLES.PHARMACIST],
   },
   {

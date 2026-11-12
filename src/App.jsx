@@ -17,6 +17,7 @@ import BinCard from "./features/admin/binCard";
 // Pharmacist Manager Pages
 import PharmacistDashboard from "./features/pharmacist-manager/pharmacistDashboard";
 import SkuManagement from "./features/pharmacist-manager/skuManagement";
+import ReorderQuotation from "./features/pharmacist-manager/reorderQuotation";
 import BatchManagement from "./features/pharmacist-manager/batchManagement";
 import StockAdjustmentLogs from "./features/pharmacist-manager/stockAdjustmentLogs";
 import DispenseLogs from "./features/pharmacist-manager/dispenseLogs";
@@ -111,6 +112,10 @@ function App() {
             <Route
               path="/pharmacist/sku-management"
               element={<SkuManagement />}
+            />
+            <Route
+              path="/pharmacist/reorder-quotations"
+              element={<ReorderQuotation />}
             />
             <Route
               path="/pharmacist/batch-management"
