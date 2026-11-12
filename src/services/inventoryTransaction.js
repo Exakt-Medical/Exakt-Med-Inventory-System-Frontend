@@ -221,6 +221,8 @@ const inventoryTransactionService = {
    */
   getAdjustmentLogsByPharmacy: async (
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
@@ -236,6 +238,8 @@ const inventoryTransactionService = {
     const response = await axios.get(
       inventoryTransactionApi.getAdjustmentLogsByPharmacy(
         pharmacyId,
+        types,
+        reason,
         page,
         size,
         search,
@@ -259,6 +263,8 @@ const inventoryTransactionService = {
 
   getAdjustmentLogsByFacility: async (
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
@@ -268,6 +274,8 @@ const inventoryTransactionService = {
   ) => {
     return inventoryTransactionService.getAdjustmentLogsByPharmacy(
       pharmacyId,
+      types,
+      reason,
       page,
       size,
       search,
@@ -278,11 +286,36 @@ const inventoryTransactionService = {
   },
 
   /**
+   * Retrieves distinct reasons for stock adjustments.
+   */
+  getAdjustmentReasons: async (
+    pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    config = {},
+  ) => {
+    if (!pharmacyId) {
+      throw new Error(
+        "Pharmacy ID is strictly required to fetch adjustment reasons.",
+      );
+    }
+    const response = await axios.get(
+      inventoryTransactionApi.getAdjustmentReasons(pharmacyId, types),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
+    return Array.isArray(response.data) ? response.data : [];
+  },
+
+  /**
    * Retrieves stock adjustment audit logs for a specific SKU.
    */
   getAdjustmentLogsBySku: async (
     skuId,
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
@@ -299,6 +332,8 @@ const inventoryTransactionService = {
       inventoryTransactionApi.getAdjustmentLogsBySku(
         skuId,
         pharmacyId,
+        types,
+        reason,
         page,
         size,
         search,

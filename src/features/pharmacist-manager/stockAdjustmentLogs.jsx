@@ -120,6 +120,15 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
   const [selectedLog, setSelectedLog] = useState(null);
   const [serverTotalPages, setServerTotalPages] = useState(1);
   const [serverTotalItems, setServerTotalItems] = useState(0);
+  const [distinctReasons, setDistinctReasons] = useState([]);
+
+  // Map frontend selectedType to backend InventoryTransaction.Type list
+  const backendTypes = useMemo(() => {
+    if (selectedType === "ADD") return "ADJUSTMENT_ADD";
+    if (selectedType === "SUBTRACT") return "ADJUSTMENT_SUB,DISPENSE";
+    // For ALL or any other selection, query all stock adjustment and dispense records
+    return "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE";
+  }, [selectedType]);
 
   // Facility-wide KPI Summary State
   const [summaryMetrics, setSummaryMetrics] = useState({
@@ -148,11 +157,28 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     }
   }, [targetPharmacyId]);
 
+  // Fetch distinct adjustment reasons across the pharmacy for dropdown
+  const fetchReasons = useCallback(async () => {
+    if (!targetPharmacyId) return;
+    try {
+      const reasons = await inventoryTransactionService.getAdjustmentReasons(
+        targetPharmacyId,
+        "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+      );
+      if (Array.isArray(reasons)) {
+        setDistinctReasons(reasons);
+      }
+    } catch (err) {
+      console.error("Failed to fetch adjustment reasons:", err);
+    }
+  }, [targetPharmacyId]);
+
   useEffect(() => {
     fetchSummary();
-  }, [fetchSummary]);
+    fetchReasons();
+  }, [fetchSummary, fetchReasons]);
 
-  // Fetch adjustment logs from backend API
+  // Fetch adjustment logs from backend API with server-side filtering
   const fetchLogs = useCallback(async () => {
     if (!targetPharmacyId) {
       setLogs([]);
@@ -164,6 +190,8 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
       const data =
         await inventoryTransactionService.getAdjustmentLogsByFacility(
           targetPharmacyId,
+          backendTypes,
+          selectedReason !== "ALL" ? selectedReason : "",
           currentPage - 1,
           itemsPerPage,
           debouncedSearchQuery,
@@ -191,7 +219,14 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     } finally {
       setIsLoading(false);
     }
-  }, [targetPharmacyId, currentPage, itemsPerPage, debouncedSearchQuery]);
+  }, [
+    targetPharmacyId,
+    backendTypes,
+    selectedReason,
+    currentPage,
+    itemsPerPage,
+    debouncedSearchQuery,
+  ]);
 
   useEffect(() => {
     fetchLogs();
@@ -201,66 +236,13 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
   const handleRefreshAll = () => {
     fetchLogs();
     fetchSummary();
+    fetchReasons();
   };
-
-  // Extract distinct reasons for filter dropdown
-  const distinctReasons = useMemo(() => {
-    const reasons = new Set();
-    logs.forEach((log) => {
-      if (log.reason) reasons.add(log.reason);
-    });
-    return Array.from(reasons);
-  }, [logs]);
-
-  // Filtered Logs
-  const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
-      // Filter by initialSkuId if passed
-      if (initialSkuId && log.skuId !== initialSkuId) {
-        return false;
-      }
-
-      // Filter by Type
-      if (selectedType !== "ALL") {
-        const normSelected = normalizeAdjustmentType(selectedType);
-        const normLog = normalizeAdjustmentType(log.adjustmentType);
-        if (normSelected !== normLog) {
-          return false;
-        }
-      }
-
-      // Filter by Reason
-      if (selectedReason !== "ALL" && log.reason !== selectedReason) {
-        return false;
-      }
-
-      // Search Query
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const matchesSku = log.skuName?.toLowerCase().includes(q);
-        const matchesBrand = log.brandName?.toLowerCase().includes(q);
-        const matchesReason = log.reason?.toLowerCase().includes(q);
-        const matchesUser = log.userName?.toLowerCase().includes(q);
-        const matchesNotes = log.notes?.toLowerCase().includes(q);
-        const matchesSkuId = String(log.skuId || "").includes(q);
-        return (
-          matchesSku ||
-          matchesBrand ||
-          matchesReason ||
-          matchesUser ||
-          matchesNotes ||
-          matchesSkuId
-        );
-      }
-
-      return true;
-    });
-  }, [logs, initialSkuId, selectedType, selectedReason, searchQuery]);
 
   // KPI Metrics based on dedicated summary API
   const metrics = useMemo(() => {
     return {
-      totalLogs: summaryMetrics.totalLogs || serverTotalItems || filteredLogs.length,
+      totalLogs: summaryMetrics.totalLogs || serverTotalItems || logs.length,
       netDelta: summaryMetrics.netDelta,
       additionsUnits: summaryMetrics.additionsUnits,
       additionsCount: summaryMetrics.additionsCount,
@@ -268,11 +250,11 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
       deductionsCount: summaryMetrics.deductionsCount,
       reconciliationCount: 0,
     };
-  }, [summaryMetrics, serverTotalItems, filteredLogs.length]);
+  }, [summaryMetrics, serverTotalItems, logs.length]);
 
   // Pagination
-  const totalPages = serverTotalPages || Math.ceil(filteredLogs.length / itemsPerPage) || 1;
-  const paginatedLogs = filteredLogs;
+  const totalPages = serverTotalPages || 1;
+  const paginatedLogs = logs;
 
   return (
     <div className="w-full max-w-full space-y-6">
@@ -518,24 +500,22 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
             />
 
             {/* Reason Filter */}
-            {distinctReasons.length > 0 && (
-              <Dropdown
-                value={selectedReason}
-                onChange={(e) => {
-                  setSelectedReason(e.target.value);
-                  setCurrentPage(1);
-                }}
-                size="sm"
-                className="w-full sm:w-44"
-                options={[
-                  { value: "ALL", label: "All Reasons" },
-                  ...distinctReasons.map((reason) => ({
-                    value: reason,
-                    label: reason,
-                  })),
-                ]}
-              />
-            )}
+            <Dropdown
+              value={selectedReason}
+              onChange={(e) => {
+                setSelectedReason(e.target.value);
+                setCurrentPage(1);
+              }}
+              size="sm"
+              className="w-full sm:w-44"
+              options={[
+                { value: "ALL", label: "All Reasons" },
+                ...distinctReasons.map((reason) => ({
+                  value: reason,
+                  label: reason,
+                })),
+              ]}
+            />
           </div>
         </div>
 
@@ -770,7 +750,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={setCurrentPage}
-            totalItems={serverTotalItems || filteredLogs.length}
+            totalItems={serverTotalItems || logs.length}
             itemsPerPage={itemsPerPage}
           />
         </div>

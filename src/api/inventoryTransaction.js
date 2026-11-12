@@ -86,13 +86,22 @@ const inventoryTransactionApi = {
 
   getAdjustmentLogsByPharmacy: (
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    if (types) {
+      const typeParams = Array.isArray(types) ? types.join(",") : types;
+      url += `&types=${encodeURIComponent(typeParams)}`;
+    }
+    if (reason && reason !== "ALL") {
+      url += `&reason=${encodeURIComponent(reason)}`;
+    }
     if (search && search.trim()) {
       url += `&search=${encodeURIComponent(search.trim())}`;
     }
@@ -101,6 +110,8 @@ const inventoryTransactionApi = {
 
   getAdjustmentLogsByFacility: (
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
@@ -109,6 +120,8 @@ const inventoryTransactionApi = {
   ) => {
     return inventoryTransactionApi.getAdjustmentLogsByPharmacy(
       pharmacyId,
+      types,
+      reason,
       page,
       size,
       search,
@@ -117,16 +130,34 @@ const inventoryTransactionApi = {
     );
   },
 
+  getAdjustmentReasons: (pharmacyId, types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE") => {
+    let url = `${API_URL}/reasons?pharmacyId=${pharmacyId}`;
+    if (types) {
+      const typeParams = Array.isArray(types) ? types.join(",") : types;
+      url += `&types=${encodeURIComponent(typeParams)}`;
+    }
+    return url;
+  },
+
   getAdjustmentLogsBySku: (
     skuId,
     pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    reason = "",
     page = 0,
     size = 10,
     search = "",
     sortBy = "createdAt",
     sortDir = "DESC",
   ) => {
-    let url = `${API_URL}/sku/${skuId}?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    let url = `${API_URL}/sku/${skuId}?pharmacyId=${pharmacyId}&page=${page}&size=${size}&sortBy=${sortBy}&sortDir=${sortDir}`;
+    if (types) {
+      const typeParams = Array.isArray(types) ? types.join(",") : types;
+      url += `&types=${encodeURIComponent(typeParams)}`;
+    }
+    if (reason && reason !== "ALL") {
+      url += `&reason=${encodeURIComponent(reason)}`;
+    }
     if (search && search.trim()) {
       url += `&search=${encodeURIComponent(search.trim())}`;
     }
