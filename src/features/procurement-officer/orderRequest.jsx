@@ -152,12 +152,49 @@ function OrderRequest() {
   const [isLoadingSuppliers, setIsLoadingSuppliers] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedUrgency, setSelectedUrgency] = useState("ALL");
+  const [reorderSummary, setReorderSummary] = useState({
+    totalReorderCount: 0,
+    criticalCount: 0,
+    reorderOnlyCount: 0,
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 6;
 
+  // Fetch Reorder Needed KPI summary from backend API
+  const fetchReorderSummary = useCallback(async () => {
+    if (!targetPharmacyId) {
+      setReorderSummary({
+        totalReorderCount: 0,
+        criticalCount: 0,
+        reorderOnlyCount: 0,
+      });
+      return;
+    }
+    try {
+      const summary =
+        await skuService.getReorderNeededSummary(targetPharmacyId);
+      if (summary) {
+        setReorderSummary({
+          totalReorderCount: Number(summary.totalReorderCount || 0),
+          criticalCount: Number(summary.criticalCount || 0),
+          reorderOnlyCount: Number(summary.reorderOnlyCount || 0),
+        });
+      }
+    } catch (err) {
+      console.error(
+        "Failed to load reorder-needed summary in Order Request:",
+        err,
+      );
+    }
+  }, [targetPharmacyId]);
+
+  useEffect(() => {
+    fetchReorderSummary();
+  }, [fetchReorderSummary]);
+
   // Fetch SKUs that need reordering from backend API (excluding active Pending/Approved orders)
   const fetchSkus = useCallback(
-    async (query = "") => {
+    async (query = "", urgency = selectedUrgency) => {
       try {
         setIsLoadingSkus(true);
         setSkuError(null);
@@ -167,14 +204,16 @@ function OrderRequest() {
           return;
         }
 
-        const data = await skuService.getReorderNeededSkus(
-          targetPharmacyId,
-          query ? query.trim() : "",
-        );
+        const data = await skuService.getReorderNeededSkus({
+          pharmacyId: targetPharmacyId,
+          search: query ? query.trim() : "",
+          stockStatus: urgency,
+          page: 0,
+          size: 1000,
+        });
 
-        if (Array.isArray(data)) {
-          setSkuList(data.map(mapDtoToSku));
-        }
+        const items = Array.isArray(data) ? data : data?.content || [];
+        setSkuList(items.map(mapDtoToSku));
       } catch (err) {
         console.error("Failed to load SKUs in Order Request:", err);
         setSkuError(
@@ -186,7 +225,7 @@ function OrderRequest() {
         setIsLoadingSkus(false);
       }
     },
-    [targetPharmacyId, currentFacilityName],
+    [targetPharmacyId, selectedUrgency],
   );
 
   const initialSkuFetchDone = useRef(false);
@@ -195,16 +234,16 @@ function OrderRequest() {
   useEffect(() => {
     if (!initialSkuFetchDone.current) {
       initialSkuFetchDone.current = true;
-      fetchSkus("");
+      fetchSkus("", selectedUrgency);
       return;
     }
 
     const timer = setTimeout(() => {
-      fetchSkus(searchQuery);
+      fetchSkus(searchQuery, selectedUrgency);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, fetchSkus]);
+  }, [searchQuery, selectedUrgency, fetchSkus]);
 
   // Fetch suppliers from backend API
   const fetchSuppliers = useCallback(async () => {
@@ -276,6 +315,50 @@ function OrderRequest() {
   const [quotationTotalPages, setQuotationTotalPages] = useState(1);
   const [quotationTotalElements, setQuotationTotalElements] = useState(0);
 
+  // Quotation Summary State for KPI cards & badge
+  const [quotationSummary, setQuotationSummary] = useState({
+    totalQuotations: 0,
+    pendingCount: 0,
+    approvedCount: 0,
+    rejectedCount: 0,
+    cancelledCount: 0,
+  });
+
+  const fetchQuotationSummary = useCallback(async () => {
+    if (!targetPharmacyId) {
+      setQuotationSummary({
+        totalQuotations: 0,
+        pendingCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+        cancelledCount: 0,
+      });
+      return;
+    }
+    try {
+      const data =
+        await reorderQuotationService.getQuotationSummary(targetPharmacyId);
+      if (data) {
+        setQuotationSummary({
+          totalQuotations: Number(data.totalQuotations || 0),
+          pendingCount: Number(data.pendingCount || 0),
+          approvedCount: Number(data.approvedCount || 0),
+          rejectedCount: Number(data.rejectedCount || 0),
+          cancelledCount: Number(data.cancelledCount || 0),
+        });
+      }
+    } catch (err) {
+      console.error(
+        "Failed to load quotation summary in Order Request:",
+        err,
+      );
+    }
+  }, [targetPharmacyId]);
+
+  useEffect(() => {
+    fetchQuotationSummary();
+  }, [fetchQuotationSummary]);
+
   // Conversion / PO Generation Modal State
   const [isConvertModalOpen, setIsConvertModalOpen] = useState(false);
   const [quotationToConvert, setQuotationToConvert] = useState(null);
@@ -295,8 +378,10 @@ function OrderRequest() {
   const [isSubmittingReject, setIsSubmittingReject] = useState(false);
 
   // View Quotation Details Modal State
-  const [selectedQuotationForView, setSelectedQuotationForView] = useState(null);
-  const [isViewQuotationModalOpen, setIsViewQuotationModalOpen] = useState(false);
+  const [selectedQuotationForView, setSelectedQuotationForView] =
+    useState(null);
+  const [isViewQuotationModalOpen, setIsViewQuotationModalOpen] =
+    useState(false);
 
   // Fetch Reorder Quotations Paginated
   const fetchQuotations = useCallback(
@@ -356,9 +441,7 @@ function OrderRequest() {
   }, [fetchQuotations, quotationCurrentPage, quotationSearchQuery]);
 
   // Count pending quotations awaiting review
-  const pendingQuotationsCount = useMemo(() => {
-    return quotations.filter((q) => q.status === "Pending").length;
-  }, [quotations]);
+  const pendingQuotationsCount = quotationSummary.pendingCount;
 
   // Conversion Handlers (Review quotation, remove SKUs, set prices, convert to PO)
   const handleOpenConvertModal = (quotation) => {
@@ -408,9 +491,7 @@ function OrderRequest() {
   const handleUpdateItemPriceInConversion = (skuId, price) => {
     setConvertFormData((prev) => ({
       ...prev,
-      items: prev.items.map((i) =>
-        i.skuId === skuId ? { ...i, price } : i,
-      ),
+      items: prev.items.map((i) => (i.skuId === skuId ? { ...i, price } : i)),
     }));
   };
 
@@ -432,7 +513,8 @@ function OrderRequest() {
     e.preventDefault();
     if (!convertFormData.items || convertFormData.items.length === 0) {
       setConvertFormErrors({
-        general: "Please include at least one medicine item in the purchase order.",
+        general:
+          "Please include at least one medicine item in the purchase order.",
       });
       return;
     }
@@ -486,7 +568,10 @@ function OrderRequest() {
       });
       setModalMode("success");
       fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+      fetchQuotationSummary();
+      fetchQuotationSummary();
       fetchSkus(searchQuery);
+      fetchReorderSummary();
     } catch (err) {
       console.error("Failed to convert quotation to PO:", err);
       setConvertFormErrors({
@@ -518,6 +603,7 @@ function OrderRequest() {
       setIsRejectModalOpen(false);
       setQuotationToReject(null);
       fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+      fetchQuotationSummary();
     } catch (err) {
       console.error("Failed to reject quotation:", err);
       alert(
@@ -542,16 +628,10 @@ function OrderRequest() {
   };
 
   // 1. Total Minimum SKUs for Current Facility (currentStock <= minimumLevel)
-  const totalMinimumSkus = useMemo(() => {
-    return currentFacilitySkus.filter((s) => s.currentStock <= s.minimumLevel)
-      .length;
-  }, [currentFacilitySkus]);
+  const totalMinimumSkus = reorderSummary.criticalCount;
 
   // 2. Total Needs Reorder SKUs for Current Facility (currentStock <= reorderLevel)
-  const totalNeedsReorderSkus = useMemo(() => {
-    return currentFacilitySkus.filter((s) => s.currentStock <= s.reorderLevel)
-      .length;
-  }, [currentFacilitySkus]);
+  const totalNeedsReorderSkus = reorderSummary.totalReorderCount;
 
   // Filtered List: Only display SKUs for current facility that need reordering (currentStock <= reorderLevel)
   const reorderSkus = useMemo(() => {
@@ -708,9 +788,7 @@ function OrderRequest() {
     const targetSku = currentFacilitySkus.find((s) => s.sku === skuCode);
     if (!targetSku) return;
 
-    if (
-      orderForm.items.some((i) => i.sku === targetSku.sku)
-    ) {
+    if (orderForm.items.some((i) => i.sku === targetSku.sku)) {
       setFormErrors((prev) => ({
         ...prev,
         itemAdd:
@@ -882,6 +960,7 @@ function OrderRequest() {
       const orderedIds = new Set(orderPayload.items.map((i) => i.skuId));
       setSkuList((prev) => prev.filter((s) => !orderedIds.has(s.id)));
       fetchSkus(searchQuery);
+      fetchReorderSummary();
     } catch (err) {
       console.error("Failed to submit purchase order to backend:", err);
       // Fallback format PO-[year]-[month]-[id] if offline during local dev
@@ -942,7 +1021,9 @@ function OrderRequest() {
             type="button"
             onClick={() => {
               fetchSkus(searchQuery);
+              fetchReorderSummary();
               fetchQuotations(quotationCurrentPage, quotationSearchQuery);
+              fetchQuotationSummary();
             }}
             disabled={isLoadingSkus || isLoadingQuotations}
             className="btn-secondary p-2.5 text-gray-600 hover:text-blue-600 shadow-xs"
@@ -1131,9 +1212,9 @@ function OrderRequest() {
           >
             <AlertTriangle className="w-4 h-4" />
             <span>System Threshold Alerts</span>
-            {reorderSkus.length > 0 && (
+            {reorderSummary.totalReorderCount > 0 && (
               <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500 text-white shadow-xs">
-                {reorderSkus.length}
+                {reorderSummary.totalReorderCount}
               </span>
             )}
           </button>
@@ -1354,18 +1435,25 @@ function OrderRequest() {
                                 {quotation.purchaseOrderStatus && (
                                   <span
                                     className={`text-[9px] px-1.5 py-0.2 rounded font-bold uppercase tracking-wider ${
-                                      quotation.purchaseOrderStatus === "Received"
+                                      quotation.purchaseOrderStatus ===
+                                      "Received"
                                         ? "bg-emerald-100 text-emerald-800"
-                                        : quotation.purchaseOrderStatus === "Approved"
+                                        : quotation.purchaseOrderStatus ===
+                                            "Approved"
                                           ? "bg-blue-100 text-blue-800"
-                                          : quotation.purchaseOrderStatus === "Partially_Received"
+                                          : quotation.purchaseOrderStatus ===
+                                              "Partially_Received"
                                             ? "bg-purple-100 text-purple-800"
-                                            : quotation.purchaseOrderStatus === "Denied"
+                                            : quotation.purchaseOrderStatus ===
+                                                "Denied"
                                               ? "bg-red-100 text-red-800"
                                               : "bg-amber-100 text-amber-800"
                                     }`}
                                   >
-                                    {quotation.purchaseOrderStatus.replace("_", " ")}
+                                    {quotation.purchaseOrderStatus.replace(
+                                      "_",
+                                      " ",
+                                    )}
                                   </span>
                                 )}
                               </div>
@@ -1478,15 +1566,15 @@ function OrderRequest() {
                   options={[
                     {
                       value: "ALL",
-                      label: `All Reorder Items (${reorderSkus.length})`,
+                      label: `All Reorder Items (${reorderSummary.totalReorderCount})`,
                     },
                     {
                       value: "MINIMUM",
-                      label: "Critical (≤ Minimum Level)",
+                      label: `Critical (≤ Minimum Level) (${reorderSummary.criticalCount})`,
                     },
                     {
                       value: "REORDER_ONLY",
-                      label: "Reorder Triggered Only",
+                      label: `Reorder Triggered Only (${reorderSummary.reorderOnlyCount})`,
                     },
                   ]}
                 />
@@ -2436,7 +2524,9 @@ function OrderRequest() {
                   </div>
                   <span className="text-[11px] text-gray-500">
                     Requested by:{" "}
-                    <strong>{quotationToConvert.userName || "Pharmacist"}</strong>{" "}
+                    <strong>
+                      {quotationToConvert.userName || "Pharmacist"}
+                    </strong>{" "}
                     for{" "}
                     <strong>
                       {quotationToConvert.supplierName || "Assigned Supplier"}
@@ -2540,7 +2630,8 @@ function OrderRequest() {
                     PO Line Items ({convertFormData.items.length})
                   </span>
                   <span className="text-[11px] text-gray-400 ml-2">
-                    Procurement may remove SKUs, calibrate units, or adjust prices
+                    Procurement may remove SKUs, calibrate units, or adjust
+                    prices
                   </span>
                 </div>
                 <div className="text-xs font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
@@ -2549,7 +2640,9 @@ function OrderRequest() {
               </div>
 
               {convertFormErrors.items && (
-                <p className="text-xs text-red-500">{convertFormErrors.items}</p>
+                <p className="text-xs text-red-500">
+                  {convertFormErrors.items}
+                </p>
               )}
 
               <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
@@ -2560,7 +2653,9 @@ function OrderRequest() {
                       <th className="px-3.5 py-2.5 w-24">Current Stock</th>
                       <th className="px-3.5 py-2.5 w-28">Order Units *</th>
                       <th className="px-3.5 py-2.5 w-32">Total Price (₱) *</th>
-                      <th className="px-3.5 py-2.5 w-28 text-right">Price / Unit</th>
+                      <th className="px-3.5 py-2.5 w-28 text-right">
+                        Price / Unit
+                      </th>
                       <th className="px-3.5 py-2.5 w-10 text-center">Action</th>
                     </tr>
                   </thead>
@@ -2588,7 +2683,8 @@ function OrderRequest() {
                                 </span>
                               </div>
                               <div className="text-[11px] text-gray-500">
-                                {item.genericName} {item.dosage && `• ${item.dosage}`}
+                                {item.genericName}{" "}
+                                {item.dosage && `• ${item.dosage}`}
                               </div>
                             </td>
 
@@ -2665,8 +2761,8 @@ function OrderRequest() {
                           colSpan="6"
                           className="px-4 py-8 text-center text-gray-400"
                         >
-                          All SKUs have been removed. At least one SKU is required
-                          to convert to a purchase order.
+                          All SKUs have been removed. At least one SKU is
+                          required to convert to a purchase order.
                         </td>
                       </tr>
                     )}
@@ -2681,7 +2777,8 @@ function OrderRequest() {
                 <span>
                   Total Quoted Cost:{" "}
                   <strong className="text-emerald-700 font-mono text-sm">
-                    ₱{computedConversionTotalCost.toLocaleString(undefined, {
+                    ₱
+                    {computedConversionTotalCost.toLocaleString(undefined, {
                       minimumFractionDigits: 2,
                       maximumFractionDigits: 2,
                     })}
@@ -2863,28 +2960,38 @@ function OrderRequest() {
                   <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
                   <div>
                     <p className="font-bold">
-                      Converted into Purchase Order #{selectedQuotationForView.purchaseOrderNum}
+                      Converted into Purchase Order #
+                      {selectedQuotationForView.purchaseOrderNum}
                     </p>
                     <p className="text-[11px] text-emerald-700">
-                      Procurement Purchase Order generated from this replenishment quotation
+                      Procurement Purchase Order generated from this
+                      replenishment quotation
                     </p>
                   </div>
                 </div>
                 {selectedQuotationForView.purchaseOrderStatus && (
                   <span
                     className={`text-xs px-2.5 py-1 rounded-full font-bold uppercase tracking-wider border shadow-xs ${
-                      selectedQuotationForView.purchaseOrderStatus === "Received"
+                      selectedQuotationForView.purchaseOrderStatus ===
+                      "Received"
                         ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                        : selectedQuotationForView.purchaseOrderStatus === "Approved"
+                        : selectedQuotationForView.purchaseOrderStatus ===
+                            "Approved"
                           ? "bg-blue-100 text-blue-800 border-blue-300"
-                          : selectedQuotationForView.purchaseOrderStatus === "Partially_Received"
+                          : selectedQuotationForView.purchaseOrderStatus ===
+                              "Partially_Received"
                             ? "bg-purple-100 text-purple-800 border-purple-300"
-                            : selectedQuotationForView.purchaseOrderStatus === "Denied"
+                            : selectedQuotationForView.purchaseOrderStatus ===
+                                "Denied"
                               ? "bg-red-100 text-red-800 border-red-300"
                               : "bg-amber-100 text-amber-800 border-amber-300"
                     }`}
                   >
-                    PO Status: {selectedQuotationForView.purchaseOrderStatus.replace("_", " ")}
+                    PO Status:{" "}
+                    {selectedQuotationForView.purchaseOrderStatus.replace(
+                      "_",
+                      " ",
+                    )}
                   </span>
                 )}
               </div>
@@ -2929,7 +3036,10 @@ function OrderRequest() {
                 </thead>
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {(selectedQuotationForView.items || []).map((item) => (
-                    <tr key={item.id || item.skuId} className="hover:bg-gray-50">
+                    <tr
+                      key={item.id || item.skuId}
+                      className="hover:bg-gray-50"
+                    >
                       <td className="px-3.5 py-2.5">
                         <div className="font-bold text-gray-900">
                           {item.brandName || item.skuCode}
@@ -2945,20 +3055,29 @@ function OrderRequest() {
                         {item.requestedUnits} units
                       </td>
                       <td className="px-3.5 py-2.5 font-mono">
-                        {item.estimatedPrice && Number(item.estimatedPrice) > 0 ? (
+                        {item.estimatedPrice &&
+                        Number(item.estimatedPrice) > 0 ? (
                           <div>
                             <span className="font-bold text-gray-900">
-                              ₱{Number(item.estimatedPrice).toLocaleString(undefined, {
-                                minimumFractionDigits: 2,
-                                maximumFractionDigits: 2,
-                              })}
+                              ₱
+                              {Number(item.estimatedPrice).toLocaleString(
+                                undefined,
+                                {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                },
+                              )}
                             </span>
                             {item.estimatedPricePerUnit > 0 && (
                               <span className="text-[10px] text-gray-500 block">
-                                ₱{Number(item.estimatedPricePerUnit).toLocaleString(undefined, {
+                                ₱
+                                {Number(
+                                  item.estimatedPricePerUnit,
+                                ).toLocaleString(undefined, {
                                   minimumFractionDigits: 2,
                                   maximumFractionDigits: 2,
-                                })}/unit
+                                })}
+                                /unit
                               </span>
                             )}
                           </div>
@@ -2983,14 +3102,19 @@ function OrderRequest() {
                 <span>
                   Total units:{" "}
                   <strong className="text-gray-900">
-                    {Number(selectedQuotationForView.totalUnits || 0).toLocaleString()}
+                    {Number(
+                      selectedQuotationForView.totalUnits || 0,
+                    ).toLocaleString()}
                   </strong>
                 </span>
                 {selectedQuotationForView.estimatedTotalCost > 0 && (
                   <span>
                     Total Quoted Cost:{" "}
                     <strong className="text-emerald-700 font-bold">
-                      ₱{Number(selectedQuotationForView.estimatedTotalCost).toLocaleString(undefined, {
+                      ₱
+                      {Number(
+                        selectedQuotationForView.estimatedTotalCost,
+                      ).toLocaleString(undefined, {
                         minimumFractionDigits: 2,
                         maximumFractionDigits: 2,
                       })}
@@ -3025,7 +3149,6 @@ function OrderRequest() {
           </div>
         )}
       </Modal>
-
     </div>
   );
 }

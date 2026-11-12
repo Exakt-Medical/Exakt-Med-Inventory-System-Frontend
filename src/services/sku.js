@@ -67,6 +67,18 @@ const skuService = {
     return response.data;
   },
 
+  getReorderNeededSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
+    const response = await axios.get(
+      skuApi.getReorderNeededSummary(pharmacyId),
+      {
+        ...config,
+        headers: getAuthHeaders(config),
+      },
+    );
+    return response.data;
+  },
+
   getDropdownSkus: async (pharmacyId, config = {}) => {
     if (!pharmacyId) return [];
     const response = await axios.get(skuApi.getDropdownSkus(pharmacyId), {
@@ -116,17 +128,55 @@ const skuService = {
     return response.data;
   },
 
-  getReorderNeededSkus: async (pharmacyId, search = "", config = {}) => {
-    if (!pharmacyId) {
-      throw new Error("Pharmacy ID is strictly required to fetch reorder-needed SKUs.");
+  getReorderNeededSkus: async (
+    paramsOrPharmacyId,
+    search = "",
+    stockStatus = "ALL",
+    config = {},
+  ) => {
+    let effectivePharmacyId;
+    let requestUrl;
+    let requestConfig = config;
+
+    if (paramsOrPharmacyId && typeof paramsOrPharmacyId === "object") {
+      effectivePharmacyId = paramsOrPharmacyId.pharmacyId;
+      requestUrl = skuApi.getReorderNeededSkus(paramsOrPharmacyId);
+      if (search && typeof search === "object") {
+        requestConfig = search;
+      }
+    } else {
+      effectivePharmacyId = paramsOrPharmacyId;
+      if (stockStatus && typeof stockStatus === "object") {
+        requestConfig = stockStatus;
+        requestUrl = skuApi.getReorderNeededSkus(
+          paramsOrPharmacyId,
+          search,
+          "ALL",
+        );
+      } else {
+        requestUrl = skuApi.getReorderNeededSkus(
+          paramsOrPharmacyId,
+          search,
+          stockStatus,
+        );
+      }
     }
-    const response = await axios.get(
-      skuApi.getReorderNeededSkus(pharmacyId, search),
-      {
-        ...config,
-        headers: getAuthHeaders(config),
-      },
-    );
+
+    if (!effectivePharmacyId) {
+      return {
+        content: [],
+        currentPage: 1,
+        totalPages: 1,
+        totalElements: 0,
+        pageSize: 10,
+        isLast: true,
+      };
+    }
+
+    const response = await axios.get(requestUrl, {
+      ...requestConfig,
+      headers: getAuthHeaders(requestConfig),
+    });
     return response.data;
   },
 };

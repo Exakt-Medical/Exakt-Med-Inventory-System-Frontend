@@ -37,6 +37,15 @@ const reorderQuotationService = {
     return response.data;
   },
 
+  getQuotationSummary: async (pharmacyId, config = {}) => {
+    if (!pharmacyId) return null;
+    const response = await axios.get(reorderQuotationApi.getSummary(pharmacyId), {
+      ...config,
+      headers: getAuthHeaders(config),
+    });
+    return response.data;
+  },
+
   getQuotationById: async (id, config = {}) => {
     const response = await axios.get(reorderQuotationApi.getQuotationById(id), {
       ...config,

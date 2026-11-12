@@ -12,6 +12,7 @@ const reorderQuotationApi = {
     });
     return `${API_URL}?${searchParams.toString()}`;
   },
+  getSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
   getQuotationById: (id) => `${API_URL}/${id}`,
   updateQuotation: (id) => `${API_URL}/${id}`,
   convertToOrder: (id) => `${API_URL}/${id}/convert-to-order`,

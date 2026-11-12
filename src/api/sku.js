@@ -24,16 +24,54 @@ const skuApi = {
     return url;
   },
   getSkuSummary: (pharmacyId) => `${API_URL}/summary?pharmacyId=${pharmacyId}`,
+  getReorderNeededSummary: (pharmacyId) =>
+    `${API_URL}/reorder-needed/summary?pharmacyId=${pharmacyId}`,
   getDropdownSkus: (pharmacyId) => `${API_URL}/dropdown?pharmacyId=${pharmacyId}`,
   getSkuById: (id) => `${API_URL}/${id}`,
   updateSku: (id) => `${API_URL}/${id}`,
   deleteSku: (id) => `${API_URL}/${id}`,
   reactivateSku: (id) => `${API_URL}/${id}/reactivate`,
   adjustStock: (id) => `${API_URL}/${id}/adjust-stock`,
-  getReorderNeededSkus: (pharmacyId, search = "") => {
+  getReorderNeededSkus: (
+    paramsOrPharmacyId,
+    search = "",
+    stockStatus = "ALL",
+    page = 0,
+    size = 10,
+    sortBy = "genericName",
+    sortDir = "ASC",
+  ) => {
     const params = new URLSearchParams();
-    params.append("pharmacyId", pharmacyId);
-    if (search) params.append("search", search);
+    if (paramsOrPharmacyId && typeof paramsOrPharmacyId === "object") {
+      const {
+        pharmacyId,
+        search: q,
+        stockStatus: ss,
+        urgency,
+        filter,
+        page: p = 0,
+        size: s = 10,
+        sortBy: sb = "genericName",
+        sortDir: sd = "ASC",
+      } = paramsOrPharmacyId;
+      if (pharmacyId) params.append("pharmacyId", pharmacyId);
+      if (q && String(q).trim()) params.append("search", String(q).trim());
+      const effectiveStockStatus = urgency || filter || ss || "ALL";
+      params.append("stockStatus", effectiveStockStatus);
+      params.append("page", p);
+      params.append("size", s);
+      params.append("sortBy", sb);
+      params.append("sortDir", sd);
+    } else {
+      if (paramsOrPharmacyId) params.append("pharmacyId", paramsOrPharmacyId);
+      if (search && String(search).trim())
+        params.append("search", String(search).trim());
+      params.append("stockStatus", stockStatus || "ALL");
+      params.append("page", page);
+      params.append("size", size);
+      params.append("sortBy", sortBy);
+      params.append("sortDir", sortDir);
+    }
     return `${API_URL}/reorder-needed?${params.toString()}`;
   },
 };

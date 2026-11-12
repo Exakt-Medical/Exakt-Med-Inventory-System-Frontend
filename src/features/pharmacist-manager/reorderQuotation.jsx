@@ -19,6 +19,10 @@ import {
   AlertTriangle,
   Send,
   Pill,
+  CheckSquare,
+  Square,
+  PackagePlus,
+  ShoppingCart,
 } from "lucide-react";
 
 // Common Components
@@ -31,11 +35,96 @@ import Dropdown from "../../components/common/dropdown";
 import Skeleton from "../../components/common/skeleton";
 import ComboBox from "../../components/common/comboBox";
 
-// Services & Hooks
+// Helpers & Services
+import { getStockStatus } from "../../helpers/inventory";
 import useAuth from "../../hooks/useAuth";
 import reorderQuotationService from "../../services/reorderQuotation";
 import supplierService from "../../services/supplier";
 import skuService from "../../services/sku";
+
+const extractDosageFromDescription = (description) => {
+  if (!description) return "";
+
+  const singleDosePattern =
+    /(?:\b\d+(?:\.\d+)?%|\b\d+(?:\.\d+)?\s*(?:mg|mcg|µg|g|iu|units?|u|meq|mmol)(?:\s*\/\s*\d*(?:\.\d+)?\s*(?:ml|l|g|dose|actuation|drop|spray))?\b)/i;
+
+  const comboPattern = new RegExp(
+    `${singleDosePattern.source}(?:\\s*\\+\\s*${singleDosePattern.source})+`,
+    "i",
+  );
+
+  const comboMatch = description.match(comboPattern);
+  if (comboMatch) {
+    return comboMatch[0].trim();
+  }
+
+  const formKeywords =
+    /(TABLET|CAPSULE|OINTMENT|CREAM|SYRUP|SUSPENSION|SOLUTION|INJECTION|DROPS|GEL|LOTION|INHALER|PATCH|SUPPOSITORY|POWDER|SHAMPOO)/i;
+  const formIndex = description.search(formKeywords);
+
+  const unitPatternGlobal = new RegExp(singleDosePattern.source, "gi");
+
+  if (formIndex > 0) {
+    const textBeforeForm = description.substring(0, formIndex);
+    const matchesBefore = textBeforeForm.match(unitPatternGlobal);
+    if (matchesBefore && matchesBefore.length > 0) {
+      return matchesBefore[0].trim();
+    }
+  }
+
+  const allMatches = description.match(unitPatternGlobal);
+  if (allMatches && allMatches.length > 0) {
+    const nonPackMatches = allMatches.filter((m) => {
+      const regex = new RegExp(
+        `${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:bottle|tube|vial|ampoule|pack|box|bag|canister)`,
+        "i",
+      );
+      return !regex.test(description);
+    });
+    if (nonPackMatches.length > 0) {
+      return nonPackMatches[0].trim();
+    }
+    return allMatches[0].trim();
+  }
+
+  return "";
+};
+
+const mapDtoToSku = (dto) => {
+  return {
+    id: dto.id,
+    sku: dto.name || "",
+    name: dto.name || "",
+    medicineId: dto.medicineId,
+    brandName: dto.brandName || "",
+    genericName: dto.drugDescription || "",
+    dosage:
+      dto.dosageStrength ||
+      extractDosageFromDescription(dto.drugDescription) ||
+      "",
+    dosageStrength:
+      dto.dosageStrength ||
+      extractDosageFromDescription(dto.drugDescription) ||
+      "",
+    dosageForm: dto.dosageForm || "",
+    packagingUnit: dto.packagingUnit || "",
+    type: dto.dosageForm || "General",
+    currentStock: Number(dto.units ?? 0),
+    units: Number(dto.units ?? 0),
+    minimumLevel: Number(dto.minimumLevel ?? 0),
+    reorderLevel: Number(dto.reorderLevel ?? 0),
+    maximumLevel: Number(dto.maximumLevel ?? 0),
+    pharmacyId: dto.pharmacyId,
+    pharmacy: dto.pharmacyName || "",
+    facilityId: dto.facilityId,
+    facility: dto.pharmacyName || dto.facilityName || "",
+    status: "Active",
+    createdAt: dto.createdAt
+      ? String(dto.createdAt).split("T")[0]
+      : new Date().toISOString().split("T")[0],
+    updatedAt: dto.updatedAt ? String(dto.updatedAt).split("T")[0] : "",
+  };
+};
 
 const STATUS_BADGES = {
   Pending: {
@@ -98,6 +187,25 @@ function ReorderQuotationPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 8;
 
+  // Navigation Tabs: "quotations" | "reorderNeeded"
+  const [activeTab, setActiveTab] = useState("quotations");
+
+  // Reorder Needed SKUs State (for tab 2)
+  const [reorderSkus, setReorderSkus] = useState([]);
+  const [isLoadingReorderSkus, setIsLoadingReorderSkus] = useState(true);
+  const [reorderSearchQuery, setReorderSearchQuery] = useState("");
+  const [reorderUrgencyFilter, setReorderUrgencyFilter] = useState("ALL");
+  const [selectedSkuIds, setSelectedSkuIds] = useState([]);
+  const [reorderCurrentPage, setReorderCurrentPage] = useState(1);
+  const [reorderTotalPages, setReorderTotalPages] = useState(1);
+  const [reorderTotalElements, setReorderTotalElements] = useState(0);
+  const [reorderSummary, setReorderSummary] = useState({
+    totalReorderCount: 0,
+    criticalCount: 0,
+    reorderOnlyCount: 0,
+  });
+  const reorderItemsPerPage = 10;
+
   // Filter States
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedStatus, setSelectedStatus] = useState("ALL");
@@ -133,6 +241,50 @@ function ReorderQuotationPage() {
   // Cancel Confirmation Modal
   const [quotationToCancel, setQuotationToCancel] = useState(null);
   const [isCancelling, setIsCancelling] = useState(false);
+
+  // Quotation Summary State for KPI cards & badge
+  const [quotationSummary, setQuotationSummary] = useState({
+    totalQuotations: 0,
+    pendingCount: 0,
+    approvedCount: 0,
+    rejectedCount: 0,
+    cancelledCount: 0,
+  });
+
+  const fetchQuotationSummary = useCallback(async () => {
+    if (!targetPharmacyId) {
+      setQuotationSummary({
+        totalQuotations: 0,
+        pendingCount: 0,
+        approvedCount: 0,
+        rejectedCount: 0,
+        cancelledCount: 0,
+      });
+      return;
+    }
+    try {
+      const data =
+        await reorderQuotationService.getQuotationSummary(targetPharmacyId);
+      if (data) {
+        setQuotationSummary({
+          totalQuotations: Number(data.totalQuotations || 0),
+          pendingCount: Number(data.pendingCount || 0),
+          approvedCount: Number(data.approvedCount || 0),
+          rejectedCount: Number(data.rejectedCount || 0),
+          cancelledCount: Number(data.cancelledCount || 0),
+        });
+      }
+    } catch (err) {
+      console.error(
+        "Failed to load quotation summary in Pharmacist Quotation:",
+        err,
+      );
+    }
+  }, [targetPharmacyId]);
+
+  useEffect(() => {
+    fetchQuotationSummary();
+  }, [fetchQuotationSummary]);
 
   // Fetch Quotations Paginated
   const fetchQuotations = useCallback(
@@ -186,10 +338,12 @@ function ReorderQuotationPage() {
     if (!initialFetchDone.current) {
       initialFetchDone.current = true;
       fetchQuotations(currentPage, searchQuery);
+      fetchQuotationSummary();
       return;
     }
     const timer = setTimeout(() => {
       fetchQuotations(currentPage, searchQuery);
+      fetchQuotationSummary();
     }, 300);
     return () => clearTimeout(timer);
   }, [fetchQuotations, currentPage, searchQuery]);
@@ -240,14 +394,189 @@ function ReorderQuotationPage() {
     fetchSkuCatalog();
   }, [fetchSkuCatalog]);
 
-  // Metrics for KPI Cards
-  const pendingCount = useMemo(() => {
-    return quotations.filter((q) => q.status === "Pending").length;
-  }, [quotations]);
+  // Fetch SKUs that need reordering for Tab 2
+  const fetchReorderSkus = useCallback(
+    async (
+      page = 1,
+      query = "",
+      urgency = "ALL",
+    ) => {
+      if (!targetPharmacyId) {
+        setReorderSkus([]);
+        setReorderTotalPages(1);
+        setReorderTotalElements(0);
+        setIsLoadingReorderSkus(false);
+        return;
+      }
+      try {
+        setIsLoadingReorderSkus(true);
+        const data = await skuService.getReorderNeededSkus({
+          pharmacyId: targetPharmacyId,
+          search: query ? query.trim() : "",
+          stockStatus: urgency,
+          page: Math.max(0, page - 1),
+          size: reorderItemsPerPage,
+          sortBy: "genericName",
+          sortDir: "ASC",
+        });
 
-  const approvedCount = useMemo(() => {
-    return quotations.filter((q) => q.status === "Approved").length;
-  }, [quotations]);
+        if (data && Array.isArray(data.content)) {
+          setReorderSkus(data.content.map(mapDtoToSku));
+          setReorderTotalPages(data.totalPages || 1);
+          setReorderTotalElements(data.totalElements || 0);
+        } else if (Array.isArray(data)) {
+          setReorderSkus(data.map(mapDtoToSku));
+          setReorderTotalPages(1);
+          setReorderTotalElements(data.length);
+        } else {
+          setReorderSkus([]);
+          setReorderTotalPages(1);
+          setReorderTotalElements(0);
+        }
+      } catch (err) {
+        console.error(
+          "Failed to load reorder-needed SKUs in Pharmacist Quotation:",
+          err,
+        );
+      } finally {
+        setIsLoadingReorderSkus(false);
+      }
+    },
+    [targetPharmacyId, reorderItemsPerPage],
+  );
+
+  useEffect(() => {
+    fetchReorderSkus(
+      reorderCurrentPage,
+      reorderSearchQuery,
+      reorderUrgencyFilter,
+    );
+  }, [
+    fetchReorderSkus,
+    reorderCurrentPage,
+    reorderSearchQuery,
+    reorderUrgencyFilter,
+  ]);
+
+  const fetchReorderSummary = useCallback(async () => {
+    if (!targetPharmacyId) {
+      setReorderSummary({
+        totalReorderCount: 0,
+        criticalCount: 0,
+        reorderOnlyCount: 0,
+      });
+      return;
+    }
+    try {
+      const summary = await skuService.getReorderNeededSummary(targetPharmacyId);
+      if (summary) {
+        setReorderSummary({
+          totalReorderCount: Number(summary.totalReorderCount || 0),
+          criticalCount: Number(summary.criticalCount || 0),
+          reorderOnlyCount: Number(summary.reorderOnlyCount || 0),
+        });
+      }
+    } catch (err) {
+      console.error(
+        "Failed to load reorder-needed summary in Pharmacist Quotation:",
+        err,
+      );
+    }
+  }, [targetPharmacyId]);
+
+  useEffect(() => {
+    fetchReorderSummary();
+  }, [fetchReorderSummary]);
+
+  const handleRefreshAll = () => {
+    fetchQuotations(currentPage, searchQuery);
+    fetchQuotationSummary();
+    fetchReorderSkus(
+      reorderCurrentPage,
+      reorderSearchQuery,
+      reorderUrgencyFilter,
+    );
+    fetchReorderSummary();
+    fetchSkuCatalog();
+  };
+
+  // Metrics for KPI Cards
+  const totalReorderNeededCount = reorderSummary.totalReorderCount;
+  const criticalShortageCount = reorderSummary.criticalCount;
+  const pendingCount = quotationSummary.pendingCount;
+  const approvedCount = quotationSummary.approvedCount;
+
+  // List of reorder-needed SKUs
+  const paginatedReorderSkus = reorderSkus;
+
+  // Multi-select helpers for reorder tab
+  const handleSelectAllVisible = () => {
+    const visibleIds = paginatedReorderSkus.map((s) => s.id);
+    const allSelected =
+      visibleIds.length > 0 &&
+      visibleIds.every((id) => selectedSkuIds.includes(id));
+    if (allSelected) {
+      setSelectedSkuIds((prev) =>
+        prev.filter((id) => !visibleIds.includes(id)),
+      );
+    } else {
+      setSelectedSkuIds((prev) =>
+        Array.from(new Set([...prev, ...visibleIds])),
+      );
+    }
+  };
+
+  const handleToggleSelectSku = (id) => {
+    setSelectedSkuIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id],
+    );
+  };
+
+  const handleSelectAllCritical = () => {
+    const criticalIds = reorderSkus
+      .filter((s) => s.currentStock <= s.minimumLevel)
+      .map((s) => s.id);
+    setSelectedSkuIds(criticalIds);
+  };
+
+  // Open Create Modal pre-populated with selected SKUs
+  const handleCreateQuotationWithSkus = (skusToInclude = []) => {
+    setIsEditing(false);
+    setEditingQuotationId(null);
+
+    const items = skusToInclude.map((sku) => {
+      const max = Number(sku.maximumLevel) || 0;
+      const current = Number(sku.currentStock) || 0;
+      const defaultQty =
+        sku.maximumLevel !== undefined &&
+        sku.currentStock !== undefined &&
+        max > current
+          ? Math.max(1, max - current)
+          : 10;
+
+      return {
+        skuId: sku.id,
+        skuCode: sku.sku || sku.name,
+        brandName: sku.brandName,
+        genericName: sku.genericName || sku.name,
+        dosage: sku.dosage || sku.dosageStrength || "",
+        packagingUnit: sku.packagingUnit || "",
+        currentStock: sku.currentStock ?? 0,
+        requestedUnits: defaultQty,
+        notes: "",
+      };
+    });
+
+    setFormData({
+      supplierId: activeSuppliers[0]?.id ? String(activeSuppliers[0].id) : "",
+      priority: items.some((i) => i.currentStock <= 0) ? "Urgent" : "Normal",
+      notes: "",
+      items: items,
+    });
+    setFormErrors({});
+    setSelectedSkuToAdd("");
+    setIsFormModalOpen(true);
+  };
 
   // Available SKUs not yet added to form
   const availableSkusForForm = useMemo(() => {
@@ -298,10 +627,12 @@ function ReorderQuotationPage() {
   // Add SKU to Quotation Form
   const handleAddItemToForm = (skuId) => {
     if (!skuId) return;
-    const targetSku = skuCatalog.find((s) => String(s.id) === String(skuId));
+    const targetSku =
+      skuCatalog.find((s) => String(s.id) === String(skuId)) ||
+      reorderSkus.find((s) => String(s.id) === String(skuId));
     if (!targetSku) return;
 
-    if (formData.items.some((i) => i.skuId === targetSku.id)) {
+    if (formData.items.some((i) => String(i.skuId) === String(targetSku.id))) {
       setFormErrors((prev) => ({
         ...prev,
         itemAdd: "This medicine is already added to the quotation.",
@@ -318,9 +649,9 @@ function ReorderQuotationPage() {
       skuId: targetSku.id,
       skuCode: targetSku.sku || targetSku.name,
       brandName: targetSku.brandName,
-      genericName: targetSku.genericName,
-      dosage: targetSku.dosage,
-      packagingUnit: targetSku.packagingUnit,
+      genericName: targetSku.genericName || targetSku.name,
+      dosage: targetSku.dosage || targetSku.dosageStrength || "",
+      packagingUnit: targetSku.packagingUnit || "",
       currentStock: targetSku.currentStock,
       requestedUnits: defaultQty,
       notes: "",
@@ -434,7 +765,15 @@ function ReorderQuotationPage() {
         isEditing,
       });
       setIsSuccessModalOpen(true);
+      setSelectedSkuIds([]);
       fetchQuotations(1, searchQuery);
+      fetchQuotationSummary();
+      fetchReorderSkus(
+        reorderCurrentPage,
+        reorderSearchQuery,
+        reorderUrgencyFilter,
+      );
+      fetchReorderSummary();
     } catch (err) {
       console.error("Failed to submit quotation:", err);
       setFormErrors({
@@ -468,6 +807,7 @@ function ReorderQuotationPage() {
       await reorderQuotationService.cancelQuotation(quotationToCancel.id);
       setQuotationToCancel(null);
       fetchQuotations(currentPage, searchQuery);
+      fetchQuotationSummary();
     } catch (err) {
       console.error("Failed to cancel quotation:", err);
       alert(
@@ -503,13 +843,15 @@ function ReorderQuotationPage() {
         <div className="flex items-center gap-2.5 flex-wrap">
           <button
             type="button"
-            onClick={() => fetchQuotations(currentPage, searchQuery)}
-            disabled={isLoadingQuotations}
+            onClick={handleRefreshAll}
+            disabled={isLoadingQuotations || isLoadingReorderSkus}
             className="btn-secondary p-2.5 text-gray-600 hover:text-blue-600 shadow-xs"
-            title="Refresh Quotations"
+            title="Refresh All Data"
           >
             <RefreshCw
-              className={`w-4 h-4 ${isLoadingQuotations ? "animate-spin" : ""}`}
+              className={`w-4 h-4 ${
+                isLoadingQuotations || isLoadingReorderSkus ? "animate-spin" : ""
+              }`}
             />
           </button>
           <button
@@ -523,9 +865,74 @@ function ReorderQuotationPage() {
         </div>
       </div>
 
-      {/* 3 KPI Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 animate-slide-up-1">
-        {/* 1. Pending Review */}
+      {/* 4 KPI Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 animate-slide-up-1">
+        {/* 1. Needs Reorder SKUs */}
+        <Card className="p-5 border border-amber-200/80 shadow-xs hover:border-amber-300 transition-all bg-linear-to-br from-white to-amber-50/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-amber-700">
+                Needs Reorder SKUs
+              </p>
+              <h3 className="text-3xl font-extrabold text-amber-600 mt-1.5">
+                {totalReorderNeededCount}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                  <Clock className="w-3 h-3" /> ≤ Reorder point
+                </span>
+                {totalReorderNeededCount > 0 && activeTab !== "reorderNeeded" && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("reorderNeeded")}
+                    className="text-[11px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                  >
+                    View Tab
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 border border-amber-200 shadow-xs">
+              <ShoppingCart className="w-6 h-6" />
+            </div>
+          </div>
+        </Card>
+
+        {/* 2. Critical Shortage */}
+        <Card className="p-5 border border-red-200/80 shadow-xs hover:border-red-300 transition-all bg-linear-to-br from-white to-red-50/20">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-red-700">
+                Critical Shortage
+              </p>
+              <h3 className="text-3xl font-extrabold text-red-600 mt-1.5">
+                {criticalShortageCount}
+              </h3>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-red-700 bg-red-100/70 px-2 py-0.5 rounded-full">
+                  <AlertCircle className="w-3 h-3" /> ≤ Minimum level
+                </span>
+                {criticalShortageCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab("reorderNeeded");
+                      handleSelectAllCritical();
+                    }}
+                    className="text-[11px] font-bold text-red-700 underline hover:text-red-900 cursor-pointer"
+                  >
+                    Select Critical
+                  </button>
+                )}
+              </div>
+            </div>
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-red-100 text-red-600 border border-red-200 shadow-xs">
+              <AlertTriangle className="w-6 h-6" />
+            </div>
+          </div>
+        </Card>
+
+        {/* 3. Pending Review */}
         <Card className="p-5 border border-amber-200/80 shadow-xs hover:border-amber-300 transition-all bg-linear-to-br from-white to-amber-50/20">
           <div className="flex items-center justify-between">
             <div>
@@ -535,9 +942,20 @@ function ReorderQuotationPage() {
               <h3 className="text-3xl font-extrabold text-amber-600 mt-1.5">
                 {pendingCount}
               </h3>
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 mt-1 bg-amber-100/70 px-2 py-0.5 rounded-full">
-                <Clock className="w-3 h-3" /> Awaiting PO Decision
-              </span>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-full">
+                  <Clock className="w-3 h-3" /> Awaiting PO Decision
+                </span>
+                {activeTab !== "quotations" && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("quotations")}
+                    className="text-[11px] font-bold text-amber-700 underline hover:text-amber-900 cursor-pointer"
+                  >
+                    View Tab
+                  </button>
+                )}
+              </div>
             </div>
             <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-amber-100 text-amber-600 border border-amber-200 shadow-xs">
               <Clock className="w-6 h-6" />
@@ -545,7 +963,7 @@ function ReorderQuotationPage() {
           </div>
         </Card>
 
-        {/* 2. Approved / Converted to PO */}
+        {/* 4. Approved / Converted to PO */}
         <Card className="p-5 border border-emerald-200/80 shadow-xs hover:border-emerald-300 transition-all bg-linear-to-br from-white to-emerald-50/20">
           <div className="flex items-center justify-between">
             <div>
@@ -564,30 +982,52 @@ function ReorderQuotationPage() {
             </div>
           </div>
         </Card>
-
-        {/* 3. Total Quotations */}
-        <Card className="p-5 border border-blue-200/80 shadow-xs hover:border-blue-300 transition-all bg-linear-to-br from-white to-blue-50/20">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-blue-700">
-                Total Quotations
-              </p>
-              <h3 className="text-3xl font-extrabold text-blue-600 mt-1.5">
-                {totalElements}
-              </h3>
-              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 mt-1 bg-blue-100/70 px-2 py-0.5 rounded-full">
-                <Layers className="w-3 h-3" /> All Pharmacist Submissions
-              </span>
-            </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-blue-100 text-blue-600 border border-blue-200 shadow-xs">
-              <FileText className="w-6 h-6" />
-            </div>
-          </div>
-        </Card>
       </div>
 
       {/* Main Workspace Card */}
       <Card className="p-0 overflow-hidden border border-gray-200 animate-slide-up-2">
+        {/* Navigation Tabs Header */}
+        <div className="flex border-b border-gray-200 bg-gray-50/75 px-4 pt-3 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveTab("quotations")}
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === "quotations"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <FileText className="w-4 h-4" />
+            <span>Reorder Quotations</span>
+            {pendingCount > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-amber-500 text-white shadow-xs">
+                {pendingCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab("reorderNeeded")}
+            className={`pb-3 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-all cursor-pointer ${
+              activeTab === "reorderNeeded"
+                ? "border-blue-600 text-blue-700"
+                : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+            }`}
+          >
+            <AlertTriangle className="w-4 h-4" />
+            <span>Reorder Needed (Low Stock)</span>
+            {totalReorderNeededCount > 0 && (
+              <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-red-600 text-white shadow-xs">
+                {totalReorderNeededCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* TAB 1: REORDER QUOTATIONS */}
+        {activeTab === "quotations" && (
+          <div>
         {/* Search & Filter Bar */}
         <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 bg-gray-50/50">
           <div className="w-full md:w-80">
@@ -887,16 +1327,338 @@ function ReorderQuotationPage() {
           </table>
         </div>
 
-        {/* Pagination */}
-        {totalElements > 0 && (
-          <div className="p-4 border-t border-gray-100 bg-gray-50/40">
-            <Pagination
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={totalElements}
-              itemsPerPage={itemsPerPage}
-              onPageChange={setCurrentPage}
-            />
+            {/* Pagination for Quotations */}
+            {totalElements > 0 && (
+              <div className="p-4 border-t border-gray-100 bg-gray-50/40">
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  totalItems={totalElements}
+                  itemsPerPage={itemsPerPage}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ======================================================== */}
+        {/* TAB 2: REORDER NEEDED (LOW STOCK ALERTS)                 */}
+        {/* ======================================================== */}
+        {activeTab === "reorderNeeded" && (
+          <div>
+            {/* Search & Filter Bar */}
+            <div className="p-4 border-b border-gray-100 flex flex-col md:flex-row items-center justify-between gap-3 bg-gray-50/50">
+              <div className="w-full md:w-80">
+                <SearchBar
+                  value={reorderSearchQuery}
+                  onChange={(e) => {
+                    setReorderSearchQuery(e.target.value);
+                    setReorderCurrentPage(1);
+                  }}
+                  onClear={() => {
+                    setReorderSearchQuery("");
+                    setReorderCurrentPage(1);
+                  }}
+                  placeholder="Search by brand name or generic name..."
+                />
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap sm:flex-nowrap">
+                {/* Urgency Filter */}
+                <Dropdown
+                  value={reorderUrgencyFilter}
+                  onChange={(e) => {
+                    setReorderUrgencyFilter(e.target.value);
+                    setReorderCurrentPage(1);
+                  }}
+                  size="sm"
+                  className="w-full sm:w-48"
+                  options={[
+                    {
+                      value: "ALL",
+                      label: `All Reorder Items (${reorderSummary.totalReorderCount})`,
+                    },
+                    {
+                      value: "MINIMUM",
+                      label: `Critical (≤ Minimum Level) (${reorderSummary.criticalCount})`,
+                    },
+                    {
+                      value: "REORDER_ONLY",
+                      label: `Reorder Point Triggered (${reorderSummary.reorderOnlyCount})`,
+                    },
+                  ]}
+                />
+              </div>
+            </div>
+
+            {/* Multi-Select Floating Action Bar if items checked */}
+            {selectedSkuIds.length > 0 && (
+              <div className="p-3 bg-blue-50/90 border-b border-blue-100 flex items-center justify-between text-xs text-blue-900 flex-wrap gap-2">
+                <div className="flex items-center gap-2 font-semibold">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-600 text-white text-[11px] font-bold">
+                    {selectedSkuIds.length}
+                  </span>
+                  <span>Medicines selected for reorder quotation</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedSkuIds([])}
+                    className="btn-secondary py-1 px-2.5 text-xs text-gray-600 hover:text-gray-900 cursor-pointer"
+                  >
+                    Clear Selection
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const selectedObjList = reorderSkus.filter((s) =>
+                        selectedSkuIds.includes(s.id),
+                      );
+                      handleCreateQuotationWithSkus(selectedObjList);
+                    }}
+                    className="btn-primary py-1 px-3 text-xs shadow-xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <PackagePlus className="w-3.5 h-3.5" />
+                    <span>Create Reorder Quotation ({selectedSkuIds.length})</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Table View */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600">
+                <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200">
+                  <tr>
+                    <th scope="col" className="px-4 py-3.5 w-10 text-center">
+                      <button
+                        type="button"
+                        onClick={handleSelectAllVisible}
+                        className="text-gray-400 hover:text-blue-600 transition-colors cursor-pointer"
+                        title="Select all visible on page"
+                        aria-label="Select all visible on page"
+                      >
+                        {paginatedReorderSkus.length > 0 &&
+                        paginatedReorderSkus.every((s) =>
+                          selectedSkuIds.includes(s.id),
+                        ) ? (
+                          <CheckSquare className="w-4 h-4 text-blue-600" />
+                        ) : (
+                          <Square className="w-4 h-4" />
+                        )}
+                      </button>
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      SKU & Medicine
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Form & Packaging
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Current vs Thresholds
+                    </th>
+                    <th scope="col" className="px-6 py-3.5">
+                      Status
+                    </th>
+                    <th scope="col" className="px-6 py-3.5 text-right">
+                      Action
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 bg-white">
+                  {isLoadingReorderSkus ? (
+                    Array.from({ length: 5 }).map((_, index) => (
+                      <tr
+                        key={`reorder-sku-skeleton-${index}`}
+                        className="animate-pulse"
+                      >
+                        <td className="px-4 py-4 text-center">
+                          <Skeleton className="h-4 w-4 mx-auto rounded" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-start gap-3">
+                            <Skeleton className="h-9 w-9 rounded-lg shrink-0" />
+                            <div className="space-y-1.5 flex-1">
+                              <Skeleton className="h-4 w-28" />
+                              <Skeleton className="h-3 w-36" />
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-3.5 w-20" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-8 w-28 rounded" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <Skeleton className="h-6 w-24 rounded-full" />
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                          <Skeleton className="h-8 w-20 ml-auto rounded-lg" />
+                        </td>
+                      </tr>
+                    ))
+                  ) : paginatedReorderSkus.length > 0 ? (
+                    paginatedReorderSkus.map((item, index) => {
+                      const status = getStockStatus(item);
+                      const isSelected = selectedSkuIds.includes(item.id);
+
+                      return (
+                        <tr
+                          key={item.id}
+                          className={`hover:bg-blue-50/30 transition-colors animate-slide-up ${
+                            isSelected
+                              ? "bg-blue-50/20"
+                              : item.currentStock <= item.minimumLevel
+                                ? "bg-red-50/15"
+                                : ""
+                          }`}
+                          style={{ animationDelay: `${index * 0.04}s` }}
+                        >
+                          {/* Checkbox */}
+                          <td className="px-4 py-4 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleToggleSelectSku(item.id)}
+                              className="text-gray-400 hover:text-blue-600 transition-colors cursor-pointer"
+                              aria-label={`Select SKU ${item.sku}`}
+                            >
+                              {isSelected ? (
+                                <CheckSquare className="w-4 h-4 text-blue-600" />
+                              ) : (
+                                <Square className="w-4 h-4" />
+                              )}
+                            </button>
+                          </td>
+
+                          {/* SKU & Drug Info */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="flex items-start gap-3">
+                              <div
+                                className={`flex h-9 w-9 items-center justify-center rounded-lg font-semibold text-xs border shrink-0 mt-0.5 ${
+                                  item.currentStock <= item.minimumLevel
+                                    ? "bg-red-50 text-red-600 border-red-200"
+                                    : "bg-amber-50 text-amber-600 border-amber-200"
+                                }`}
+                              >
+                                <Pill className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-gray-900 text-sm">
+                                    {item.brandName}
+                                  </span>
+                                  <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                                    {item.sku}
+                                  </span>
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {item.genericName} {item.dosage && `• ${item.dosage}`}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Dosage Form & Packaging */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-xs font-semibold text-gray-800">
+                              {item.dosageForm || "—"}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5">
+                              {item.packagingUnit || "—"}
+                            </div>
+                          </td>
+
+                          {/* Current Stock vs Thresholds */}
+                          <td className="px-6 py-4 whitespace-nowrap text-xs">
+                            <div className="flex items-center gap-2">
+                              <div className="bg-gray-100 px-2.5 py-1 rounded text-center">
+                                <span className="text-[10px] block uppercase font-medium text-gray-500">
+                                  Current
+                                </span>
+                                <span className="font-bold text-gray-900 text-xs font-mono">
+                                  {item.currentStock}
+                                </span>
+                              </div>
+                              <div className="bg-red-50 border border-red-100 text-red-700 px-2 py-1 rounded text-center">
+                                <span className="text-[10px] block uppercase font-medium text-red-500">
+                                  Min
+                                </span>
+                                <span className="font-bold font-mono">
+                                  {item.minimumLevel}
+                                </span>
+                              </div>
+                              <div className="bg-amber-50 border border-amber-100 text-amber-700 px-2 py-1 rounded text-center">
+                                <span className="text-[10px] block uppercase font-medium text-amber-500">
+                                  Reorder
+                                </span>
+                                <span className="font-bold font-mono">
+                                  {item.reorderLevel}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span
+                              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold border ${status.color}`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`}
+                              />
+                              {status.label}
+                            </span>
+                          </td>
+
+                          {/* Actions */}
+                          <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
+                            <button
+                              type="button"
+                              onClick={() => handleCreateQuotationWithSkus([item])}
+                              className="btn-primary py-1.5 px-3 text-xs shadow-xs flex items-center gap-1.5 font-medium ml-auto cursor-pointer"
+                              title="Create Reorder Quotation for this SKU"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                              <span>Quote</span>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan="6"
+                        className="px-6 py-12 text-center text-gray-400"
+                      >
+                        <CheckCircle2 className="w-9 h-9 mx-auto mb-2 text-emerald-500" />
+                        <p className="text-base font-semibold text-gray-800">
+                          All SKU inventory levels are healthy!
+                        </p>
+                        <p className="text-xs text-gray-400 mt-1">
+                          No medicines are currently at or below their reorder threshold for this pharmacy.
+                        </p>
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination for Reorder Needed */}
+            {reorderTotalElements > 0 && (
+              <div className="p-4 border-t border-gray-100 bg-gray-50/40">
+                <Pagination
+                  currentPage={reorderCurrentPage}
+                  totalPages={reorderTotalPages}
+                  totalItems={reorderTotalElements}
+                  itemsPerPage={reorderItemsPerPage}
+                  onPageChange={setReorderCurrentPage}
+                />
+              </div>
+            )}
           </div>
         )}
       </Card>
