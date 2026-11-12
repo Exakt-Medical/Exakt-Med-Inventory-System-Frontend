@@ -33,7 +33,7 @@ import Modal from "../../components/common/modal";
 import DeleteModal from "../../components/common/deleteModal";
 import SuccessModal from "../../components/common/successModal";
 import Dropdown from "../../components/common/dropdown";
-import ComboBox from "./components/comboBox";
+import ComboBox from "../../components/common/comboBox";
 import Skeleton from "../../components/common/skeleton";
 
 // Services

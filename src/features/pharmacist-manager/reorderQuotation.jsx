@@ -29,6 +29,7 @@ import Modal from "../../components/common/modal";
 import SuccessModal from "../../components/common/successModal";
 import Dropdown from "../../components/common/dropdown";
 import Skeleton from "../../components/common/skeleton";
+import ComboBox from "../../components/common/comboBox";
 
 // Services & Hooks
 import useAuth from "../../hooks/useAuth";
@@ -1005,24 +1006,48 @@ function ReorderQuotationPage() {
                 </span>
               </div>
 
-              {/* Add Medicine Dropdown */}
-              <div className="flex items-center gap-1.5 w-full sm:w-auto">
-                <Dropdown
-                  value={selectedSkuToAdd}
-                  onChange={(e) => setSelectedSkuToAdd(e.target.value)}
-                  placeholder="+ Add medicine from catalog"
-                  size="sm"
-                  className="w-full sm:w-72"
-                  options={availableSkusForForm.map((s) => ({
-                    value: s.id,
-                    label: `${s.brandName || s.name} (${s.sku || s.name}) — Stock: ${s.currentStock}`,
-                  }))}
-                />
+              {/* Add Medicine ComboBox */}
+              <div className="flex items-center gap-1.5 w-full sm:w-96">
+                <div className="flex-1 min-w-0">
+                  <ComboBox
+                    id="reorder-catalog-combobox"
+                    name="selectedSkuToAdd"
+                    options={availableSkusForForm}
+                    value={selectedSkuToAdd}
+                    onChange={(e) => setSelectedSkuToAdd(e.target.value)}
+                    onSelect={(sku) =>
+                      setSelectedSkuToAdd(sku ? String(sku.id) : "")
+                    }
+                    placeholder="Search medicine from catalog..."
+                    isLoading={isLoadingSkuCatalog}
+                    loadingText="Loading catalog..."
+                    emptyText="No matching medicines in catalog"
+                    getOptionValue={(s) => String(s.id)}
+                    getOptionLabel={(s) =>
+                      s.brandName
+                        ? `${s.brandName} (${s.genericName || s.name})`
+                        : s.name || s.sku
+                    }
+                    getOptionSubtext={(s) =>
+                      `SKU: ${s.sku || s.name} • Stock: ${s.currentStock ?? 0}${s.dosage ? ` • ${s.dosage}` : ""}`
+                    }
+                    getDisplayValue={(s) =>
+                      s.brandName
+                        ? `${s.brandName} (${s.sku || s.name})`
+                        : s.sku || s.name
+                    }
+                    inputClassName="!py-1.5 !text-xs !px-3"
+                    className="w-full text-xs"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={() => handleAddItemToForm(selectedSkuToAdd)}
                   disabled={!selectedSkuToAdd}
-                  className="btn-secondary py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                  className={`${
+                    selectedSkuToAdd ? "btn-primary" : "btn-secondary"
+                  } py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer shrink-0 transition-all`}
+                  title="Add selected medicine to quotation"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>Add</span>
@@ -1121,8 +1146,8 @@ function ReorderQuotationPage() {
                         className="px-4 py-8 text-center text-gray-400"
                       >
                         <Pill className="w-6 h-6 mx-auto mb-1 text-gray-300" />
-                        No medicines added yet. Use the dropdown above to add
-                        items to quote.
+                        No medicines added yet. Use the combobox above to search
+                        and add items to quote.
                       </td>
                     </tr>
                   )}

@@ -30,7 +30,7 @@ import SearchBar from "../../components/common/searchBar";
 import Pagination from "../../components/common/pagination";
 import Modal from "../../components/common/modal";
 import Dropdown from "../../components/common/dropdown";
-import ComboBox from "./components/comboBox";
+import ComboBox from "../../components/common/comboBox";
 import Skeleton from "../../components/common/skeleton";
 import LocationManagementModal, {
   getStorageTypeBadge,

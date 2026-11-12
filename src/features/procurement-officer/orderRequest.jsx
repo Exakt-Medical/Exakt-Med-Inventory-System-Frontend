@@ -34,6 +34,7 @@ import Modal from "../../components/common/modal";
 import SuccessModal from "../../components/common/successModal";
 import Dropdown from "../../components/common/dropdown";
 import Skeleton from "../../components/common/skeleton";
+import ComboBox from "../../components/common/comboBox";
 
 // Constants & Helper Imports
 import { getStockStatus } from "../../helpers/inventory";
@@ -1880,25 +1881,43 @@ function OrderRequest() {
                 </span>
               </div>
 
-              {/* Action Dropdown: Inventory Medicine */}
+              {/* Action ComboBox: Inventory Medicine */}
               <div className="flex items-center justify-end gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5">
-                  <Dropdown
-                    value={skuToAdd}
-                    onChange={(e) => setSkuToAdd(e.target.value)}
-                    placeholder="+ Add medicine from catalog"
-                    size="sm"
-                    className="w-60"
-                    options={availableSkusToAdd.map((s) => ({
-                      value: s.sku,
-                      label: `${s.brandName} (${s.sku}) — Stock: ${s.currentStock}`,
-                    }))}
-                  />
+                <div className="flex items-center gap-1.5 w-full sm:w-80">
+                  <div className="flex-1 min-w-0">
+                    <ComboBox
+                      id="order-requisition-catalog-combobox"
+                      name="skuToAdd"
+                      options={availableSkusToAdd}
+                      value={skuToAdd}
+                      onChange={(e) => setSkuToAdd(e.target.value)}
+                      onSelect={(sku) => setSkuToAdd(sku ? sku.sku : "")}
+                      placeholder="Search medicine from catalog..."
+                      emptyText="No matching medicines in catalog"
+                      getOptionValue={(s) => s.sku}
+                      getOptionLabel={(s) =>
+                        s.brandName
+                          ? `${s.brandName} (${s.genericName || s.sku})`
+                          : s.sku
+                      }
+                      getOptionSubtext={(s) =>
+                        `SKU: ${s.sku} • Stock: ${s.currentStock ?? 0} (Reorder: ${s.reorderLevel ?? 0})${s.dosage ? ` • ${s.dosage}` : ""}`
+                      }
+                      getDisplayValue={(s) =>
+                        s.brandName ? `${s.brandName} (${s.sku})` : s.sku
+                      }
+                      inputClassName="!py-1.5 !text-xs !px-3"
+                      className="w-full text-xs"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => handleAddItemToForm(skuToAdd)}
                     disabled={!skuToAdd}
-                    className="btn-secondary py-1.5 px-2.5 text-xs flex items-center gap-1 cursor-pointer shrink-0"
+                    className={`${
+                      skuToAdd ? "btn-primary" : "btn-secondary"
+                    } py-1.5 px-3 text-xs flex items-center gap-1 cursor-pointer shrink-0 transition-all`}
+                    title="Add selected medicine to purchase order"
                   >
                     <Plus className="w-3.5 h-3.5" />
                     <span>Add</span>
@@ -2073,8 +2092,8 @@ function OrderRequest() {
                           No medicines selected
                         </p>
                         <p className="text-[11px]">
-                          Choose from the dropdown above to add medicines to
-                          this PO.
+                          Search and choose from the combobox above to add
+                          medicines to this PO.
                         </p>
                       </td>
                     </tr>
