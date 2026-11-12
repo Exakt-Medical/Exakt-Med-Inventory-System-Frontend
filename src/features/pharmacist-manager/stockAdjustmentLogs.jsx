@@ -855,8 +855,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                   Authorized User
                 </span>
                 <span className="font-semibold text-gray-800 text-sm mt-0.5 block">
-                  {selectedLog.userName || "System"} (ID:{" "}
-                  {selectedLog.userId || "—"})
+                  {selectedLog.userName || "System"}
                 </span>
               </div>
               <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
@@ -864,8 +863,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                   Facility
                 </span>
                 <span className="font-semibold text-gray-800 text-sm mt-0.5 block">
-                  {selectedLog.facilityName || currentFacilityName} (ID:{" "}
-                  {selectedLog.pharmacyId || targetPharmacyId})
+                  {selectedLog.facilityName || currentFacilityName}
                 </span>
               </div>
             </div>
