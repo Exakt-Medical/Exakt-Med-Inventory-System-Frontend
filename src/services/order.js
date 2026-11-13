@@ -1,13 +1,7 @@
 import axios from "axios";
 import orderApi from "../api/order";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const orderService = {
   createOrder: async (orderData, config = {}) => {

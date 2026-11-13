@@ -1,13 +1,7 @@
 import axios from "axios";
 import reorderQuotationApi from "../api/reorderQuotation";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const reorderQuotationService = {
   createQuotation: async (quotationData, config = {}) => {

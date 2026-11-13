@@ -1,13 +1,7 @@
 import axios from "axios";
 import libPackagingUnitApi from "../api/libPackagingUnit";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const libPackagingUnitService = {
   getAll: async (category, config = {}) => {

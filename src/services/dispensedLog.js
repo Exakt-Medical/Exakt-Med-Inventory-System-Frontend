@@ -1,13 +1,7 @@
 import axios from "axios";
 import dispensedLogApi from "../api/dispensedLog";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const dispensedLogService = {
   getAll: async (pharmacyId = null, status = null, config = {}) => {

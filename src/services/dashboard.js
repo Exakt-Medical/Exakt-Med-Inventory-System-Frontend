@@ -1,13 +1,7 @@
 import axios from "axios";
 import dashboardApi from "../api/dashboard";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const dashboardService = {
   getPharmacistDashboard: async (pharmacyId, config = {}) => {

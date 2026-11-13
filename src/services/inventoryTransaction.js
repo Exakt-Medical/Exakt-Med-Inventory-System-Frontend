@@ -1,13 +1,7 @@
 import axios from "axios";
 import inventoryTransactionApi from "../api/inventoryTransaction";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 /**
  * Normalizes an inventory transaction record to provide backward-compatible

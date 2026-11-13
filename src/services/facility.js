@@ -1,13 +1,7 @@
 import axios from "axios";
 import facilityApi from "../api/facility";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const facilityService = {
   getFacilitiesByProjectId: async (projectId, config = {}) => {

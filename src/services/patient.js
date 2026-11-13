@@ -1,13 +1,7 @@
 import axios from "axios";
 import patientApi from "../api/patient";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const patientService = {
   getAll: async (pharmacyId, search = "", config = {}) => {

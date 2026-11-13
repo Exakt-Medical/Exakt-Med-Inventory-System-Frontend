@@ -6,12 +6,20 @@ import authService from "../services/auth";
 
 export const AuthContext = createContext(null);
 
+export const getAuthHeaders = (config = {}) => {
+  const token = sessionStorage.getItem("token");
+  return {
+    ...config.headers,
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+};
+
 export function AuthProvider({ children }) {
   const navigate = useNavigate();
 
   const [user, setUser] = useState(() => {
     try {
-      const userString = localStorage.getItem("currentUser");
+      const userString = sessionStorage.getItem("currentUser");
       return userString ? JSON.parse(userString) : null;
     } catch {
       return null;
@@ -20,7 +28,7 @@ export function AuthProvider({ children }) {
 
   const [facility, setFacilityState] = useState(() => {
     try {
-      const facString = localStorage.getItem("currentFacility");
+      const facString = sessionStorage.getItem("currentFacility");
       return facString ? JSON.parse(facString) : null;
     } catch {
       return null;
@@ -29,7 +37,7 @@ export function AuthProvider({ children }) {
 
   const [pharmacy, setPharmacyState] = useState(() => {
     try {
-      const pharmString = localStorage.getItem("currentPharmacy");
+      const pharmString = sessionStorage.getItem("currentPharmacy");
       return pharmString ? JSON.parse(pharmString) : null;
     } catch {
       return null;
@@ -38,7 +46,7 @@ export function AuthProvider({ children }) {
 
   const [project, setProjectState] = useState(() => {
     try {
-      const projString = localStorage.getItem("currentProject");
+      const projString = sessionStorage.getItem("currentProject");
       return projString ? JSON.parse(projString) : null;
     } catch {
       return null;
@@ -47,9 +55,10 @@ export function AuthProvider({ children }) {
 
   const isAuthenticated = Boolean(user);
 
-  // Synchronize state if another tab or event modifies localStorage
+  // Synchronize state if an event modifies sessionStorage
   useEffect(() => {
     const handleStorageChange = (e) => {
+      if (e.storageArea && e.storageArea !== sessionStorage) return;
       if (e.key === "currentUser") {
         try {
           setUser(e.newValue ? JSON.parse(e.newValue) : null);
@@ -88,7 +97,7 @@ export function AuthProvider({ children }) {
     const response = await authService.login(credentials);
 
     if (response?.token) {
-      localStorage.setItem("token", response.token);
+      sessionStorage.setItem("token", response.token);
     }
 
     const userData = {
@@ -98,7 +107,7 @@ export function AuthProvider({ children }) {
       token: response.token,
     };
 
-    localStorage.setItem("currentUser", JSON.stringify(userData));
+    sessionStorage.setItem("currentUser", JSON.stringify(userData));
     setUser(userData);
 
     const targetRoute = ROLE_DETAILS[userData?.role]?.initialRoute;
@@ -108,16 +117,16 @@ export function AuthProvider({ children }) {
   };
 
   const selectProject = (projectData, navigateToFacility = true) => {
-    localStorage.setItem("currentProject", JSON.stringify(projectData));
+    sessionStorage.setItem("currentProject", JSON.stringify(projectData));
     setProjectState(projectData);
     if (
       facility &&
       facility.projectId &&
       String(facility.projectId) !== String(projectData?.id)
     ) {
-      localStorage.removeItem("currentFacility");
+      sessionStorage.removeItem("currentFacility");
       setFacilityState(null);
-      localStorage.removeItem("currentPharmacy");
+      sessionStorage.removeItem("currentPharmacy");
       setPharmacyState(null);
     }
     if (navigateToFacility) {
@@ -127,22 +136,22 @@ export function AuthProvider({ children }) {
 
   const setProject = (projectData) => {
     if (projectData) {
-      localStorage.setItem("currentProject", JSON.stringify(projectData));
+      sessionStorage.setItem("currentProject", JSON.stringify(projectData));
     } else {
-      localStorage.removeItem("currentProject");
+      sessionStorage.removeItem("currentProject");
     }
     setProjectState(projectData);
   };
 
   const selectFacility = (facilityData, navigateToPharmacy = true) => {
-    localStorage.setItem("currentFacility", JSON.stringify(facilityData));
+    sessionStorage.setItem("currentFacility", JSON.stringify(facilityData));
     setFacilityState(facilityData);
     if (
       pharmacy &&
       pharmacy.facilityId &&
       String(pharmacy.facilityId) !== String(facilityData?.id)
     ) {
-      localStorage.removeItem("currentPharmacy");
+      sessionStorage.removeItem("currentPharmacy");
       setPharmacyState(null);
     }
     if (navigateToPharmacy) {
@@ -152,17 +161,17 @@ export function AuthProvider({ children }) {
 
   const setFacility = (facilityData) => {
     if (facilityData) {
-      localStorage.setItem("currentFacility", JSON.stringify(facilityData));
+      sessionStorage.setItem("currentFacility", JSON.stringify(facilityData));
     } else {
-      localStorage.removeItem("currentFacility");
-      localStorage.removeItem("currentPharmacy");
+      sessionStorage.removeItem("currentFacility");
+      sessionStorage.removeItem("currentPharmacy");
       setPharmacyState(null);
     }
     setFacilityState(facilityData);
   };
 
   const selectPharmacy = (pharmacyData) => {
-    localStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
+    sessionStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
     setPharmacyState(pharmacyData);
     const redirectPath = getRedirectPathForRole(user?.role);
     navigate(redirectPath, { replace: true });
@@ -170,19 +179,19 @@ export function AuthProvider({ children }) {
 
   const setPharmacy = (pharmacyData) => {
     if (pharmacyData) {
-      localStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
+      sessionStorage.setItem("currentPharmacy", JSON.stringify(pharmacyData));
     } else {
-      localStorage.removeItem("currentPharmacy");
+      sessionStorage.removeItem("currentPharmacy");
     }
     setPharmacyState(pharmacyData);
   };
 
   const logout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("currentUser");
-    localStorage.removeItem("currentFacility");
-    localStorage.removeItem("currentPharmacy");
-    localStorage.removeItem("currentProject");
+    sessionStorage.removeItem("token");
+    sessionStorage.removeItem("currentUser");
+    sessionStorage.removeItem("currentFacility");
+    sessionStorage.removeItem("currentPharmacy");
+    sessionStorage.removeItem("currentProject");
     setUser(null);
     setFacilityState(null);
     setPharmacyState(null);

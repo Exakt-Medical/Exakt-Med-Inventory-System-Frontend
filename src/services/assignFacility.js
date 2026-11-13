@@ -1,13 +1,7 @@
 import axios from "axios";
 import assignFacilityApi from "../api/assignFacility";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const normalizeUserIds = (data) => {
   if (Array.isArray(data)) {

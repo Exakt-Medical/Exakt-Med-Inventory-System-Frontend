@@ -1,13 +1,7 @@
 import axios from "axios";
 import supplierApi from "../api/supplier";
 
-const getAuthHeaders = (config = {}) => {
-  const token = localStorage.getItem("token");
-  return {
-    ...config.headers,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { getAuthHeaders } from "../context/authContext";
 
 const supplierService = {
   getAllSuppliers: async (facilityId, config = {}) => {
