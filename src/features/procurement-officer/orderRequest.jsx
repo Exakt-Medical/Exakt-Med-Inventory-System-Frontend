@@ -44,6 +44,7 @@ import skuService from "../../services/sku";
 import supplierService from "../../services/supplier";
 import orderService from "../../services/order";
 import reorderQuotationService from "../../services/reorderQuotation";
+import { exportReorderQuotationPdf } from "../../utils/pdfExport";
 
 const extractDosageFromDescription = (description) => {
   if (!description) return "";
@@ -625,6 +626,20 @@ function OrderRequest() {
       setSelectedQuotationForView(quotation);
     }
     setIsViewQuotationModalOpen(true);
+  };
+
+  // Export Quotation as PDF
+  const handleExportQuotationPdf = async (quotation) => {
+    if (!quotation) return;
+    let target = quotation;
+    if (!Array.isArray(quotation.items) || quotation.items.length === 0) {
+      try {
+        target = await reorderQuotationService.getQuotationById(quotation.id);
+      } catch (err) {
+        console.error("Failed to load full quotation for PDF export:", err);
+      }
+    }
+    exportReorderQuotationPdf(target, currentFacilityName);
   };
 
   // 1. Total Minimum SKUs for Current Facility (currentStock <= minimumLevel)
@@ -1472,6 +1487,17 @@ function OrderRequest() {
                                 title="View Quotation Details"
                               >
                                 <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleExportQuotationPdf(quotation)
+                                }
+                                className="btn-secondary p-1.5 text-gray-600 hover:text-indigo-600 hover:border-indigo-300 cursor-pointer"
+                                title="Export Quotation as PDF"
+                                aria-label={`Export quotation ${quotation.quotationNumber} as PDF`}
+                              >
+                                <FileText className="w-3.5 h-3.5" />
                               </button>
                               {isPending && (
                                 <>
@@ -3123,6 +3149,16 @@ function OrderRequest() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleExportQuotationPdf(selectedQuotationForView)
+                  }
+                  className="btn-secondary text-xs flex items-center gap-1.5 text-indigo-700 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Export PDF</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => setIsViewQuotationModalOpen(false)}

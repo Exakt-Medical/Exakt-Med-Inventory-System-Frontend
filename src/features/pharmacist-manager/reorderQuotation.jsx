@@ -41,6 +41,7 @@ import useAuth from "../../hooks/useAuth";
 import reorderQuotationService from "../../services/reorderQuotation";
 import supplierService from "../../services/supplier";
 import skuService from "../../services/sku";
+import { exportReorderQuotationPdf } from "../../utils/pdfExport";
 
 const extractDosageFromDescription = (description) => {
   if (!description) return "";
@@ -799,6 +800,20 @@ function ReorderQuotationPage() {
     setIsViewModalOpen(true);
   };
 
+  // Export Quotation as PDF
+  const handleExportQuotationPdf = async (quotation) => {
+    if (!quotation) return;
+    let target = quotation;
+    if (!Array.isArray(quotation.items) || quotation.items.length === 0) {
+      try {
+        target = await reorderQuotationService.getQuotationById(quotation.id);
+      } catch (err) {
+        console.error("Failed to load full quotation for PDF export:", err);
+      }
+    }
+    exportReorderQuotationPdf(target, currentFacilityName);
+  };
+
   // Confirm Cancel Quotation
   const handleConfirmCancelQuotation = async () => {
     if (!quotationToCancel) return;
@@ -1278,6 +1293,15 @@ function ReorderQuotationPage() {
                             aria-label={`View quotation ${quotation.quotationNumber}`}
                           >
                             <Eye className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleExportQuotationPdf(quotation)}
+                            className="btn-secondary p-1.5 text-gray-600 hover:text-indigo-600 hover:border-indigo-300 cursor-pointer"
+                            title="Export Quotation as PDF"
+                            aria-label={`Export quotation ${quotation.quotationNumber} as PDF`}
+                          >
+                            <FileText className="w-3.5 h-3.5" />
                           </button>
                           {isPending && (
                             <>
@@ -2216,7 +2240,15 @@ function ReorderQuotationPage() {
             })()}
 
             {/* Modal Footer */}
-            <div className="flex items-center justify-end pt-3 border-t border-gray-100">
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => handleExportQuotationPdf(selectedQuotationForView)}
+                className="btn-secondary text-xs flex items-center gap-1.5 text-indigo-700 border-indigo-200 hover:bg-indigo-50 hover:border-indigo-300"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Export PDF</span>
+              </button>
               <button
                 type="button"
                 onClick={() => setIsViewModalOpen(false)}
