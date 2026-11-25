@@ -16,10 +16,8 @@ import BinCard from "./features/admin/binCard";
 
 // Pharmacist Manager Pages
 import PharmacistDashboard from "./features/pharmacist-manager/pharmacistDashboard";
-import SkuManagement from "./features/pharmacist-manager/skuManagement";
 import ReorderQuotation from "./features/pharmacist-manager/reorderQuotation";
 import BatchManagement from "./features/pharmacist-manager/batchManagement";
-import StockAdjustmentLogs from "./features/pharmacist-manager/stockAdjustmentLogs";
 import DispenseLogs from "./features/pharmacist-manager/dispenseLogs";
 
 // Procurement Officer Pages
@@ -29,6 +27,8 @@ import OrderRequest from "./features/procurement-officer/orderRequest";
 // Shared Pages
 import RequestedOrders from "./features/shared/requestedOrders";
 import AuditLogs from "./features/shared/audtiLogs";
+import SkuManagement from "./features/shared/skuManagement";
+import StockAdjustmentLogs from "./features/shared/stockAdjustmentLogs";
 
 // Components, Guard & Config
 import Sidebar from "./components/common/sidebar";
@@ -85,11 +85,19 @@ function App() {
           >
             <Route path="/admin/suppliers" element={<SupplierManagement />} />
             <Route
+              path="/admin/sku-management"
+              element={<SkuManagement />}
+            />
+            <Route
               path="/admin/requested-orders"
               element={<RequestedOrders />}
             />
             <Route path="/admin/bin-cards" element={<BinCard />} />
             <Route path="/admin/bin-cards/:skuId" element={<BinCard />} />
+            <Route
+              path="/admin/stock-adjustments"
+              element={<StockAdjustmentLogs />}
+            />
 
             {/* This page is under development */}
             <Route path="/admin/accounting" element={<UnderMaintenance />} />

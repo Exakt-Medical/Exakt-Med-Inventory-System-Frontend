@@ -42,6 +42,8 @@ import skuService from "../../services/sku";
 import batchService from "../../services/batch";
 import libPackagingUnitService from "../../services/libPackagingUnit";
 import patientService from "../../services/patient";
+import RoleGuard from "../../components/guard/roleGuard";
+import { ROLES } from "../../config/roles";
 
 // Constants Imports
 import {
@@ -1284,21 +1286,23 @@ function SkuManagement() {
               className={`w-4 h-4 ${(isLoadingSkus || isLoadingSummary) ? "animate-spin text-blue-600" : ""}`}
             />
           </button>
-          <Link
-            to="/pharmacist/reorder-quotations"
-            className="btn-secondary self-start sm:self-auto shadow-sm"
-          >
-            <FileText className="w-4 h-4 text-gray-600" />
-            <span>Reorder Quotations</span>
-          </Link>
-          <button
-            type="button"
-            onClick={handleOpenAddModal}
-            className="btn-primary self-start sm:self-auto shadow-sm"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create New SKU</span>
-          </button>
+          <RoleGuard allowedRoles={[ROLES.PHARMACIST, ROLES.SUPER_ADMIN]}>
+            <Link
+              to="/pharmacist/reorder-quotations"
+              className="btn-secondary self-start sm:self-auto shadow-sm"
+            >
+              <FileText className="w-4 h-4 text-gray-600" />
+              <span>Reorder Quotations</span>
+            </Link>
+            <button
+              type="button"
+              onClick={handleOpenAddModal}
+              className="btn-primary self-start sm:self-auto shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create New SKU</span>
+            </button>
+          </RoleGuard>
         </div>
       </div>
 
@@ -1619,20 +1623,38 @@ function SkuManagement() {
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {/* Deduct Expired Batches Button inside row */}
                               {skuExpiredCount > 0 && (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    handleOpenExpiredModalForSku(item)
+                                <RoleGuard
+                                  allowedRoles={[
+                                    ROLES.PHARMACIST,
+                                    ROLES.SUPER_ADMIN,
+                                  ]}
+                                  fallback={
+                                    <span
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300"
+                                      title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units)`}
+                                    >
+                                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span>
+                                        Has Expired Batches ({skuExpiredCount})
+                                      </span>
+                                    </span>
                                   }
-                                  disabled={isProcessingExpired}
-                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
-                                  title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units). Click to deduct.`}
                                 >
-                                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                                  <span>
-                                    Has Expired Batches ({skuExpiredCount})
-                                  </span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      handleOpenExpiredModalForSku(item)
+                                    }
+                                    disabled={isProcessingExpired}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
+                                    title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units). Click to deduct.`}
+                                  >
+                                    <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                    <span>
+                                      Has Expired Batches ({skuExpiredCount})
+                                    </span>
+                                  </button>
+                                </RoleGuard>
                               )}
                             </div>
                           </div>
@@ -1802,74 +1824,80 @@ function SkuManagement() {
                             <Eye className="w-3.5 h-3.5" />
                           </button>
 
-                          {/* 2. Stock Adjustment OR Process Expired (replaces adjustment when expired batches exist) */}
-                          {item.status === "Inactive" ? (
-                            <button
-                              type="button"
-                              disabled
-                              className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
-                              title="Cannot adjust stock for an inactive SKU"
-                              aria-label="Stock Adjustment Disabled"
-                            >
-                              <Sliders className="w-3.5 h-3.5 text-gray-300" />
-                            </button>
-                          ) : skuExpiredCount > 0 ? (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenExpiredModalForSku(item)}
-                              disabled={isProcessingExpired}
-                              className="p-1.5 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
-                              title={`Deduct ${skuExpiredCount} expired batch(es) (${skuExpiredUnits.toLocaleString()} units)`}
-                              aria-label="Process Expired Batches"
-                            >
-                              <Clock className="w-3.5 h-3.5 text-amber-600" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenAdjustModal(item)}
-                              className="btn-secondary p-1.5 text-gray-600 hover:text-amber-600 hover:border-amber-300"
-                              title="Stock Adjustment (Count / Write-off)"
-                              aria-label="Stock Adjustment"
-                            >
-                              <Sliders className="w-3.5 h-3.5" />
-                            </button>
-                          )}
-
-                          {/* 4. Edit SKU & Thresholds */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenEditModal(item)}
-                            className="btn-secondary p-1.5 text-gray-600 hover:text-emerald-600 hover:border-emerald-300"
-                            title="Edit SKU & Thresholds"
-                            aria-label="Edit SKU & Thresholds"
+                          {/* 2. Stock Adjustment, Edit, and Deactivate/Reactivate */}
+                          <RoleGuard
+                            allowedRoles={[ROLES.PHARMACIST, ROLES.SUPER_ADMIN]}
                           >
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
+                            {item.status === "Inactive" ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                                title="Cannot adjust stock for an inactive SKU"
+                                aria-label="Stock Adjustment Disabled"
+                              >
+                                <Sliders className="w-3.5 h-3.5 text-gray-300" />
+                              </button>
+                            ) : skuExpiredCount > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenExpiredModalForSku(item)
+                                }
+                                disabled={isProcessingExpired}
+                                className="p-1.5 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
+                                title={`Deduct ${skuExpiredCount} expired batch(es) (${skuExpiredUnits.toLocaleString()} units)`}
+                                aria-label="Process Expired Batches"
+                              >
+                                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenAdjustModal(item)}
+                                className="btn-secondary p-1.5 text-gray-600 hover:text-amber-600 hover:border-amber-300"
+                                title="Stock Adjustment (Count / Write-off)"
+                                aria-label="Stock Adjustment"
+                              >
+                                <Sliders className="w-3.5 h-3.5" />
+                              </button>
+                            )}
 
-                          {/* 5. Deactivate OR Reactivate SKU */}
-                          {item.status === "Inactive" ? (
+                            {/* 4. Edit SKU & Thresholds */}
                             <button
                               type="button"
-                              disabled={isSubmitting}
-                              onClick={() => handleReactivateSku(item)}
-                              className="btn-secondary p-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
-                              title="Reactivate SKU (Set to Active)"
-                              aria-label="Reactivate SKU"
+                              onClick={() => handleOpenEditModal(item)}
+                              className="btn-secondary p-1.5 text-gray-600 hover:text-emerald-600 hover:border-emerald-300"
+                              title="Edit SKU & Thresholds"
+                              aria-label="Edit SKU & Thresholds"
                             >
-                              <RotateCcw className="w-3.5 h-3.5" />
+                              <Pencil className="w-3.5 h-3.5" />
                             </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenDeleteModal(item)}
-                              className="btn-danger p-1.5"
-                              title="Set Inactive (Deactivate SKU)"
-                              aria-label="Deactivate SKU"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          )}
+
+                            {/* 5. Deactivate OR Reactivate SKU */}
+                            {item.status === "Inactive" ? (
+                              <button
+                                type="button"
+                                disabled={isSubmitting}
+                                onClick={() => handleReactivateSku(item)}
+                                className="btn-secondary p-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
+                                title="Reactivate SKU (Set to Active)"
+                                aria-label="Reactivate SKU"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenDeleteModal(item)}
+                                className="btn-danger p-1.5"
+                                title="Set Inactive (Deactivate SKU)"
+                                aria-label="Deactivate SKU"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </RoleGuard>
                         </div>
                       </td>
                     </tr>
@@ -2898,40 +2926,52 @@ function SkuManagement() {
 
             {/* Actions */}
             <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-gray-100">
-              {(selectedSku.expiredBatchesCount || 0) > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleCloseModal();
-                    handleOpenExpiredModalForSku(selectedSku);
-                  }}
-                  className="btn-secondary text-xs text-amber-700 hover:text-amber-800 border-amber-300 bg-amber-50"
-                  title="Deduct Expired Batches"
-                >
-                  <Clock className="w-3.5 h-3.5 text-amber-600" />
-                  <span>
-                    Deduct Expired (
-                    {selectedSku.expiredBatchesCount})
-                  </span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleOpenAdjustModal(selectedSku)}
-                  className="btn-secondary text-xs text-amber-700 hover:text-amber-800"
-                >
-                  <Sliders className="w-3.5 h-3.5" />
-                  <span>Adjust Stock</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => handleOpenEditModal(selectedSku)}
-                className="btn-primary text-xs"
+              <RoleGuard
+                allowedRoles={[ROLES.PHARMACIST, ROLES.SUPER_ADMIN]}
+                fallback={
+                  <button
+                    type="button"
+                    onClick={handleCloseModal}
+                    className="btn-secondary text-xs"
+                  >
+                    Close
+                  </button>
+                }
               >
-                <Pencil className="w-3.5 h-3.5" />
-                <span>Edit Thresholds</span>
-              </button>
+                {(selectedSku.expiredBatchesCount || 0) > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleCloseModal();
+                      handleOpenExpiredModalForSku(selectedSku);
+                    }}
+                    className="btn-secondary text-xs text-amber-700 hover:text-amber-800 border-amber-300 bg-amber-50"
+                    title="Deduct Expired Batches"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>
+                      Deduct Expired ({selectedSku.expiredBatchesCount})
+                    </span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handleOpenAdjustModal(selectedSku)}
+                    className="btn-secondary text-xs text-amber-700 hover:text-amber-800"
+                  >
+                    <Sliders className="w-3.5 h-3.5" />
+                    <span>Adjust Stock</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditModal(selectedSku)}
+                  className="btn-primary text-xs"
+                >
+                  <Pencil className="w-3.5 h-3.5" />
+                  <span>Edit Thresholds</span>
+                </button>
+              </RoleGuard>
             </div>
           </div>
         )}

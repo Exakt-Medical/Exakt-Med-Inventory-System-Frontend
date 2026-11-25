@@ -28,6 +28,12 @@ export const NAVIGATION_ITEMS = [
     roles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
   },
   {
+    title: "SKU Management",
+    path: "/admin/sku-management",
+    icon: Pill,
+    roles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
+  },
+  {
     title: "Requested Orders",
     path: "/admin/requested-orders",
     icon: ClipboardCheck,
@@ -37,6 +43,12 @@ export const NAVIGATION_ITEMS = [
     title: "Bin Cards",
     path: "/admin/bin-cards",
     icon: FileSpreadsheet,
+    roles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
+  },
+  {
+    title: "Stock Adjustments",
+    path: "/admin/stock-adjustments",
+    icon: ClipboardList,
     roles: [ROLES.ADMIN, ROLES.SUPER_ADMIN],
   },
   {
