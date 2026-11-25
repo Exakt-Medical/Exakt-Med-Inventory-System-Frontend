@@ -171,12 +171,13 @@ export const validateBatchForm = (
           ? Number(item.remainingUnits)
           : Number(item.quantity || 0);
 
-      const batches =
-        Array.isArray(item.batches) && item.batches.length > 0
-          ? item.batches
-          : null;
+      // Skip items that are already fully received and have no remaining units
+      if (maxAllowed <= 0) {
+        return;
+      }
 
-      if (batches) {
+      if (Array.isArray(item.batches)) {
+        const batches = item.batches;
         // Multi-batch per SKU validation
         const totalAllocated = batches.reduce(
           (sum, b) => sum + (Number(b.units) || 0),

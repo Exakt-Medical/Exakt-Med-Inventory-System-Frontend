@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   Package,
   Boxes,
@@ -140,6 +140,8 @@ function BatchManagement() {
 
   // Collapsed state for SKU batches in the Receive modal
   const [collapsedSkus, setCollapsedSkus] = useState({});
+  const [showCompletedItems, setShowCompletedItems] = useState(false);
+  const skuCardRefs = useRef({});
 
   const toggleSkuCollapse = (skuKey) => {
     setCollapsedSkus((prev) => ({
@@ -167,6 +169,115 @@ function BatchManagement() {
     clearErrors,
     clearError,
   } = useError();
+
+  // Separate receivable (pending) medicines from already fully-received ones to keep the modal uncluttered
+  const { pendingReceiveItems, completedReceiveItems } = useMemo(() => {
+    const pending = [];
+    const completed = [];
+    (receiveFormData.items || []).forEach((item, idx) => {
+      const orderedUnits = Number(item.orderedUnits || item.quantity || 0);
+      const receivedUnits = Number(item.receivedUnits || 0);
+      const remainingUnits =
+        item.remainingUnits !== undefined
+          ? Number(item.remainingUnits)
+          : Math.max(0, orderedUnits - receivedUnits);
+
+      if (remainingUnits > 0) {
+        pending.push({ item, idx, orderedUnits, receivedUnits, remainingUnits });
+      } else {
+        completed.push({ item, idx, orderedUnits, receivedUnits, remainingUnits });
+      }
+    });
+    return { pendingReceiveItems: pending, completedReceiveItems: completed };
+  }, [receiveFormData.items]);
+
+  // Live summary of what is actually being submitted in this receipt session
+  const receiveSessionSummary = useMemo(() => {
+    let activeBatches = 0;
+    let totalUnits = 0;
+    let activeMedicines = 0;
+
+    pendingReceiveItems.forEach(({ item }) => {
+      let itemUnits = 0;
+      (item.batches || []).forEach((b) => {
+        const u = Number(b.units) || 0;
+        if (u > 0) {
+          activeBatches += 1;
+          itemUnits += u;
+        }
+      });
+      if (itemUnits > 0) {
+        activeMedicines += 1;
+        totalUnits += itemUnits;
+      }
+    });
+
+    return { activeBatches, totalUnits, activeMedicines };
+  }, [pendingReceiveItems]);
+
+  // Human-readable error list for the sticky error summary banner in the Receive modal
+  const receiveErrorSummary = useMemo(() => {
+    const list = [];
+    const items = receiveFormData.items || [];
+
+    Object.entries(formErrors || {}).forEach(([key, message]) => {
+      if (!message) return;
+
+      if (key === "general" || key === "poNumber") {
+        list.push({
+          key,
+          label: key === "poNumber" ? "Purchase Order" : "Submission Error",
+          message,
+          skuKey: null,
+        });
+        return;
+      }
+
+      const batchMatch = key.match(/^item_(\d+)_batch_(\d+)_(.+)$/);
+      if (batchMatch) {
+        const itemIdx = Number(batchMatch[1]);
+        const batchIdx = Number(batchMatch[2]);
+        const item = items[itemIdx];
+        const skuKey = item ? item.orderedItemId || item.sku || itemIdx : null;
+        list.push({
+          key,
+          label: `${item?.brandName || `Medicine #${itemIdx + 1}`} — Batch #${batchIdx + 1}`,
+          message,
+          skuKey,
+        });
+        return;
+      }
+
+      const itemMatch = key.match(/^item_(\d+)_(.+)$/);
+      if (itemMatch) {
+        const itemIdx = Number(itemMatch[1]);
+        const item = items[itemIdx];
+        const skuKey = item ? item.orderedItemId || item.sku || itemIdx : null;
+        list.push({
+          key,
+          label: item?.brandName || `Medicine #${itemIdx + 1}`,
+          message,
+          skuKey,
+        });
+        return;
+      }
+
+      list.push({ key, label: "Validation Error", message, skuKey: null });
+    });
+
+    return list;
+  }, [formErrors, receiveFormData.items]);
+
+  const scrollToSkuCard = useCallback((skuKey) => {
+    if (skuKey === null || skuKey === undefined) return;
+    setCollapsedSkus((prev) => ({ ...prev, [skuKey]: false }));
+    setTimeout(() => {
+      const el = skuCardRefs.current[skuKey];
+      if (el && typeof el.scrollIntoView === "function") {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 60);
+  }, []);
 
   // Storage Location State
   const [locationsList, setLocationsList] = useState([]);
@@ -549,6 +660,7 @@ function BatchManagement() {
     setReceiveFormData(getInitialReceiveFormData());
     setBulkDates({ manufacturingDate: "", expiryDate: "" });
     setCollapsedSkus({});
+    setShowCompletedItems(false);
     clearErrors();
     setSelectedBatch(null);
     setModalMode("receive");
@@ -566,6 +678,7 @@ function BatchManagement() {
     setSelectedBatch(null);
     setBulkDates({ manufacturingDate: "", expiryDate: "" });
     setCollapsedSkus({});
+    setShowCompletedItems(false);
     setUpdateStatusError(null);
     setUpdateStatusSuccess(null);
     setReleaseErrors({});
@@ -723,9 +836,11 @@ function BatchManagement() {
         }),
       });
       setCollapsedSkus({});
+      setShowCompletedItems(false);
     } else {
       setReceiveFormData(getInitialReceiveFormData());
       setCollapsedSkus({});
+      setShowCompletedItems(false);
     }
     clearErrors();
   };
@@ -897,20 +1012,29 @@ function BatchManagement() {
 
     if (!isValid) {
       setFormErrors(errors);
-      // Auto-expand any items that contain validation errors so user can review immediately
-      setCollapsedSkus((prev) => {
-        const next = { ...prev };
-        receiveFormData.items.forEach((item, itemIdx) => {
-          const hasError = Object.keys(errors).some((key) =>
-            key.startsWith(`item_${itemIdx}_`),
-          );
-          if (hasError) {
-            const skuKey = item.orderedItemId || item.sku || itemIdx;
-            next[skuKey] = false;
-          }
-        });
-        return next;
+
+      // Compute errored SKU keys synchronously (outside React state updater)
+      const erroredSkuKeys = [];
+      receiveFormData.items.forEach((item, itemIdx) => {
+        const hasError = Object.keys(errors).some((key) =>
+          key.startsWith(`item_${itemIdx}_`),
+        );
+        if (hasError) {
+          erroredSkuKeys.push(item.orderedItemId || item.sku || itemIdx);
+        }
       });
+
+      // Auto-expand any items that contain validation errors so user can review immediately
+      if (erroredSkuKeys.length > 0) {
+        setCollapsedSkus((prev) => {
+          const next = { ...prev };
+          erroredSkuKeys.forEach((skuKey) => {
+            next[skuKey] = false;
+          });
+          return next;
+        });
+        scrollToSkuCard(erroredSkuKeys[0]);
+      }
       return;
     }
 
@@ -1516,14 +1640,7 @@ function BatchManagement() {
         title="Receive Stock via Purchase Order"
         size="5xl"
       >
-        <form onSubmit={handleSaveReceivedBatch} className="space-y-4">
-          {formErrors.general && (
-            <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
-              <span>{formErrors.general}</span>
-            </div>
-          )}
-
+        <form onSubmit={handleSaveReceivedBatch} noValidate className="space-y-4">
           {/* PO Number Dropdown */}
           <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-200">
             {isOrdersLoading ? (
@@ -1561,7 +1678,7 @@ function BatchManagement() {
                   const isPart =
                     po.status === "Partially_Received" ||
                     po.status === "Partially Received";
-                  return `${po.totalQuantity.toLocaleString()} units • ${po.supplierName} [${isPart ? "Partially Received" : "Approved"}]`;
+                  return `${po.totalRemainingUnits.toLocaleString()} remaining of ${po.totalQuantity.toLocaleString()} units • ${po.supplierName} [${isPart ? "Partially Received" : "Approved"}]`;
                 }}
                 getDisplayValue={(po) =>
                   `${po.orderNumber} — ${po.supplierName}`
@@ -1574,119 +1691,74 @@ function BatchManagement() {
             )}
           </div>
 
-          {/* PO Selected Details Card */}
+          {/* PO Selected Details Summary Strip (Compact) */}
           {selectedPoDetails ? (
-            <div className="space-y-4">
-              <div className="p-3.5 rounded-xl bg-gray-50 border border-gray-200 text-xs space-y-2.5">
-                <div className="flex items-start justify-between gap-2 border-b border-gray-200 pb-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-bold text-blue-900 text-sm">
-                        {selectedPoDetails.orderNumber}
-                      </span>
-                      <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
-                          selectedPoDetails.status === "Partially_Received" ||
-                          selectedPoDetails.status === "Partially Received"
-                            ? "bg-amber-50 text-amber-800 border border-amber-200"
-                            : "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                        }`}
-                      >
-                        {selectedPoDetails.status === "Partially_Received"
-                          ? "Partially Received"
-                          : selectedPoDetails.status}
-                      </span>
-                    </div>
-                    <p className="text-gray-600 text-xs mt-0.5">
-                      Supplier:{" "}
-                      <span className="font-semibold text-gray-800">
-                        {selectedPoDetails.supplierName}
-                      </span>
-                    </p>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[11px] text-gray-500 block">
-                      Total PO Units
-                    </span>
-                    <span className="font-mono font-bold text-blue-800 text-sm">
-                      {selectedPoDetails.totalQuantity?.toLocaleString()} units
-                    </span>
-                  </div>
+            <div className="space-y-3.5">
+              <div className="p-3 rounded-xl bg-gray-50 border border-gray-200 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+                  <span className="font-mono font-bold text-blue-900 text-sm">
+                    {selectedPoDetails.orderNumber}
+                  </span>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold ${
+                      selectedPoDetails.status === "Partially_Received" ||
+                      selectedPoDetails.status === "Partially Received"
+                        ? "bg-amber-50 text-amber-800 border border-amber-200"
+                        : "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                    }`}
+                  >
+                    {selectedPoDetails.status === "Partially_Received"
+                      ? "Partially Received"
+                      : selectedPoDetails.status}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-gray-600">
+                    <Truck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                    <strong className="text-gray-800">
+                      {selectedPoDetails.supplierName}
+                    </strong>
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-gray-600">
+                    <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>{selectedPoDetails.targetFacility}</span>
+                  </span>
                 </div>
 
-                {/* Progress bar if partially received */}
-                {Number(selectedPoDetails.totalReceivedUnits || 0) > 0 && (
-                  <div className="p-2.5 rounded-lg bg-blue-50/70 border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-slate-600 font-medium">
-                        Fulfillment:
-                      </span>
-                      <span className="font-bold text-slate-900">
-                        {(
-                          selectedPoDetails.totalReceivedUnits || 0
-                        ).toLocaleString()}{" "}
-                        / {selectedPoDetails.totalQuantity?.toLocaleString()}{" "}
-                        units
-                      </span>
-                      <span className="text-[11px] font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
-                        {Math.round(
-                          ((selectedPoDetails.totalReceivedUnits || 0) /
-                            (selectedPoDetails.totalQuantity || 1)) *
-                            100,
-                        )}
-                        %
-                      </span>
-                    </div>
-                    <div className="text-slate-600 font-medium">
-                      Remaining:{" "}
-                      <strong className="text-blue-900">
-                        {(
-                          selectedPoDetails.totalRemainingUnits || 0
-                        ).toLocaleString()}{" "}
-                        units
-                      </strong>
-                    </div>
-                  </div>
-                )}
-
-                <div className="flex justify-between gap-2.5 text-[11px]">
-                  <div className="flex items-center gap-1.5 text-gray-600">
-                    <Truck className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span className="truncate font-medium">
-                      {selectedPoDetails.supplierName}
+                <div className="flex items-center gap-3 shrink-0">
+                  {Number(selectedPoDetails.totalReceivedUnits || 0) > 0 && (
+                    <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full">
+                      {(
+                        selectedPoDetails.totalReceivedUnits || 0
+                      ).toLocaleString()}{" "}
+                      / {selectedPoDetails.totalQuantity?.toLocaleString()}{" "}
+                      received (
+                      {Math.round(
+                        ((selectedPoDetails.totalReceivedUnits || 0) /
+                          (selectedPoDetails.totalQuantity || 1)) *
+                          100,
+                      )}
+                      %)
                     </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-gray-600">
-                    <Building2 className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate font-medium">
-                      {selectedPoDetails.targetFacility}
+                  )}
+                  <span className="font-mono font-bold text-blue-900">
+                    {(
+                      selectedPoDetails.totalRemainingUnits ??
+                      selectedPoDetails.totalQuantity ??
+                      0
+                    ).toLocaleString()}{" "}
+                    <span className="font-sans font-normal text-gray-500">
+                      units remaining
                     </span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-gray-600">
-                    <FileText className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span>
-                      Items:{" "}
-                      <strong>
-                        {selectedPoDetails.items.length}{" "}
-                        {selectedPoDetails.items.length === 1
-                          ? "medicine"
-                          : "medicines"}
-                      </strong>
-                    </span>
-                  </div>
+                  </span>
                 </div>
               </div>
 
-              {/* Optional Quick Autofill Dates Bar (for multi-item POs) */}
-              {receiveFormData.items?.length > 1 && (
-                <div className="p-3 rounded-xl bg-blue-50/60 border border-blue-200 text-xs">
-                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2.5">
+              {/* Optional Quick Autofill Dates Bar (only when multiple pending items exist) */}
+              {pendingReceiveItems.length > 1 && (
+                <div className="p-2.5 px-3 rounded-xl bg-blue-50/60 border border-blue-200 text-xs">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-blue-900 font-semibold text-xs">
                       <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
-                      <span>
-                        Quick Autofill Dates across All Medicines (Optional):
-                      </span>
+                      <span>Quick Autofill Dates (Optional):</span>
                     </div>
                     <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
                       <input
@@ -1725,99 +1797,124 @@ function BatchManagement() {
                 </div>
               )}
 
-              {/* Per-SKU Stock Intake Cards */}
+              {/* Per-SKU Stock Intake Cards (Pending Items First) */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold uppercase tracking-wider text-gray-700 flex items-center gap-1.5">
                     <Package className="w-4 h-4 text-blue-600" />
-                    Medicines to Receive ({receiveFormData.items?.length || 0})
-                    — Multi-Batch Allocation
+                    Pending to Receive ({pendingReceiveItems.length}{" "}
+                    {pendingReceiveItems.length === 1 ? "medicine" : "medicines"}
+                    )
                   </span>
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCollapseAll}
-                      className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline cursor-pointer"
-                    >
-                      Collapse All
-                    </button>
-                    <span className="text-gray-300">•</span>
-                    <button
-                      type="button"
-                      onClick={handleExpandAll}
-                      className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline cursor-pointer"
-                    >
-                      Expand All
-                    </button>
-                  </div>
+                  {pendingReceiveItems.length > 1 && (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleCollapseAll}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline cursor-pointer"
+                      >
+                        Collapse All
+                      </button>
+                      <span className="text-gray-300">•</span>
+                      <button
+                        type="button"
+                        onClick={handleExpandAll}
+                        className="text-[11px] text-blue-600 hover:text-blue-800 font-medium hover:underline cursor-pointer"
+                      >
+                        Expand All
+                      </button>
+                    </div>
+                  )}
                 </div>
 
-                <div className="space-y-4 max-h-[55vh] overflow-y-auto pr-1.5 scrollbar-thin">
-                  {receiveFormData.items?.map((item, idx) => {
-                    const skuKey = item.orderedItemId || item.sku || idx;
-                    const isCollapsed = Boolean(collapsedSkus[skuKey]);
-                    const totalAllocated = (item.batches || []).reduce(
-                      (sum, b) => sum + (Number(b.units) || 0),
-                      0,
-                    );
-                    const orderedUnits = Number(
-                      item.orderedUnits || item.quantity || 0,
-                    );
-                    const receivedUnits = Number(item.receivedUnits || 0);
-                    const remainingUnits =
-                      item.remainingUnits !== undefined
-                        ? Number(item.remainingUnits)
-                        : Math.max(0, orderedUnits - receivedUnits);
+                <div className="space-y-3.5 max-h-[50vh] overflow-y-auto pr-1.5 scrollbar-thin">
+                  {pendingReceiveItems.map(
+                    ({
+                      item,
+                      idx,
+                      orderedUnits,
+                      receivedUnits,
+                      remainingUnits,
+                    }) => {
+                      const skuKey = item.orderedItemId || item.sku || idx;
+                      const isCollapsed = Boolean(collapsedSkus[skuKey]);
+                      const totalAllocated = (item.batches || []).reduce(
+                        (sum, b) => sum + (Number(b.units) || 0),
+                        0,
+                      );
 
-                    const isAllocatedMatch =
-                      totalAllocated === remainingUnits && remainingUnits > 0;
-                    const isOverAllocated = totalAllocated > remainingUnits;
-                    const unallocatedForDelivery =
-                      remainingUnits - totalAllocated;
+                      const isAllocatedMatch =
+                        totalAllocated === remainingUnits && remainingUnits > 0;
+                      const isOverAllocated = totalAllocated > remainingUnits;
+                      const unallocatedForDelivery =
+                        remainingUnits - totalAllocated;
+                      const itemErrorCount = Object.keys(formErrors || {}).filter(
+                        (key) => key.startsWith(`item_${idx}_`),
+                      ).length;
 
-                    return (
-                      <div
-                        key={skuKey}
-                        className="p-4 rounded-xl border border-gray-200 bg-white shadow-xs space-y-3"
-                      >
-                        {/* SKU Header & Allocation Summary */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
-                          <div className="flex items-center gap-2.5">
-                            <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0 border border-blue-100">
-                              <Pill className="w-4.5 h-4.5" />
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-gray-900 text-sm">
-                                  {item.brandName}
-                                </span>
-                                <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
-                                  {item.sku}
-                                </span>
-                                {receivedUnits > 0 && (
-                                  <span className="font-mono text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-medium">
-                                    Ordered: {orderedUnits.toLocaleString()} •
-                                    Prev: {receivedUnits.toLocaleString()} •
-                                    Rem: {remainingUnits.toLocaleString()}
-                                  </span>
+                      return (
+                        <div
+                          key={skuKey}
+                          ref={(el) => {
+                            if (el) skuCardRefs.current[skuKey] = el;
+                          }}
+                          className={`p-4 rounded-xl border bg-white shadow-xs space-y-3 transition-colors scroll-mt-2 ${
+                            itemErrorCount > 0
+                              ? "border-red-300 ring-1 ring-red-200"
+                              : "border-gray-200"
+                          }`}
+                        >
+                          {/* SKU Header & Allocation Summary */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-gray-100 pb-3">
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`w-9 h-9 rounded-lg flex items-center justify-center font-bold shrink-0 border ${
+                                  itemErrorCount > 0
+                                    ? "bg-red-50 text-red-600 border-red-200"
+                                    : "bg-blue-50 text-blue-600 border-blue-100"
+                                }`}
+                              >
+                                {itemErrorCount > 0 ? (
+                                  <AlertCircle className="w-4.5 h-4.5" />
+                                ) : (
+                                  <Pill className="w-4.5 h-4.5" />
                                 )}
                               </div>
-                              <p className="text-[11px] text-gray-500 mt-0.5">
-                                {item.genericName} • {item.dosageForm} (
-                                {item.packagingUnit})
-                              </p>
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-gray-900 text-sm">
+                                    {item.brandName}
+                                  </span>
+                                  <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                                    {item.sku}
+                                  </span>
+                                  {itemErrorCount > 0 && (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-700 bg-red-50 border border-red-200 px-2 py-0.5 rounded-full">
+                                      <AlertCircle className="w-3 h-3" />
+                                      {itemErrorCount}{" "}
+                                      {itemErrorCount === 1
+                                        ? "issue"
+                                        : "issues"}
+                                    </span>
+                                  )}
+                                  {receivedUnits > 0 && (
+                                    <span className="font-mono text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded font-medium">
+                                      Ordered: {orderedUnits.toLocaleString()} •
+                                      Prev: {receivedUnits.toLocaleString()} •
+                                      Rem: {remainingUnits.toLocaleString()}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-gray-500 mt-0.5">
+                                  {item.genericName} • {item.dosageForm} (
+                                  {item.packagingUnit})
+                                </p>
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Allocation Badges, Add Batch CTA & Collapse Toggle */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {remainingUnits <= 0 ? (
-                              <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-lg">
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                Fully Received ({receivedUnits.toLocaleString()}{" "}
-                                units)
-                              </span>
-                            ) : isAllocatedMatch ? (
+                            {/* Allocation Badges, Add Batch CTA & Collapse Toggle */}
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {isAllocatedMatch ? (
                               <span className="inline-flex items-center gap-1 font-mono text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 px-2.5 py-1 rounded-lg">
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
                                 {totalAllocated.toLocaleString()} /{" "}
@@ -1848,35 +1945,38 @@ function BatchManagement() {
                               </span>
                             )}
 
-                            {/* + Add Batch button */}
-                            <button
-                              type="button"
-                              onClick={() => handleAddBatch(idx)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer shadow-2xs hover:border-blue-300"
-                              title="Add another batch/lot for this SKU"
-                            >
-                              <Plus className="w-3.5 h-3.5" />
-                              <span>Add Batch</span>
-                            </button>
+                            {/* + Add Batch & Collapse / Expand Toggle Buttons (only when remaining units > 0) */}
+                            {remainingUnits > 0 && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => handleAddBatch(idx)}
+                                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors cursor-pointer shadow-2xs hover:border-blue-300"
+                                  title="Add another batch/lot for this SKU"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>Add Batch</span>
+                                </button>
 
-                            {/* Collapse / Expand Toggle Button */}
-                            <button
-                              type="button"
-                              onClick={() => toggleSkuCollapse(skuKey)}
-                              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-gray-200 transition-colors cursor-pointer shadow-2xs"
-                              title={
-                                isCollapsed
-                                  ? "Expand batches for this medicine"
-                                  : "Collapse batches for this medicine"
-                              }
-                            >
-                              <span>{isCollapsed ? "Expand" : "Collapse"}</span>
-                              {isCollapsed ? (
-                                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-                              ) : (
-                                <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
-                              )}
-                            </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSkuCollapse(skuKey)}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-gray-200 transition-colors cursor-pointer shadow-2xs"
+                                  title={
+                                    isCollapsed
+                                      ? "Expand batches for this medicine"
+                                      : "Collapse batches for this medicine"
+                                  }
+                                >
+                                  <span>{isCollapsed ? "Expand" : "Collapse"}</span>
+                                  {isCollapsed ? (
+                                    <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+                                  ) : (
+                                    <ChevronUp className="w-3.5 h-3.5 text-slate-500" />
+                                  )}
+                                </button>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -2067,7 +2167,7 @@ function BatchManagement() {
                                         id={`receive-batch-units-${idx}-${bIdx}`}
                                         type="number"
                                         min="1"
-                                        max={orderedUnits}
+                                        max={remainingUnits}
                                         value={batch.units}
                                         onChange={(e) =>
                                           handleBatchFieldChange(
@@ -2355,9 +2455,73 @@ function BatchManagement() {
                             })}
                           </div>
                         )}
-                      </div>
-                    );
-                  })}
+                        </div>
+                      );
+                    },
+                  )}
+
+                  {/* Collapsible Already-Completed Items Section */}
+                  {completedReceiveItems.length > 0 && (
+                    <div className="rounded-xl border border-emerald-200/80 bg-emerald-50/40 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setShowCompletedItems((prev) => !prev)
+                        }
+                        className="w-full px-3.5 py-2.5 flex items-center justify-between text-xs font-semibold text-emerald-800 hover:bg-emerald-50 transition-colors cursor-pointer"
+                      >
+                        <span className="flex items-center gap-2">
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          <span>
+                            Already Fully Received (
+                            {completedReceiveItems.length}{" "}
+                            {completedReceiveItems.length === 1
+                              ? "medicine"
+                              : "medicines"}
+                            )
+                          </span>
+                        </span>
+                        <span className="inline-flex items-center gap-1 text-[11px] text-emerald-700">
+                          <span>{showCompletedItems ? "Hide" : "Show"}</span>
+                          {showCompletedItems ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </span>
+                      </button>
+
+                      {showCompletedItems && (
+                        <div className="px-3.5 pb-3 pt-1 border-t border-emerald-200/60 divide-y divide-emerald-100">
+                          {completedReceiveItems.map(
+                            ({ item, idx, receivedUnits }) => (
+                              <div
+                                key={item.orderedItemId || item.sku || idx}
+                                className="py-2 flex items-center justify-between gap-2 text-xs"
+                              >
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-semibold text-gray-800">
+                                      {item.brandName}
+                                    </span>
+                                    <span className="font-mono text-[10px] text-slate-600 bg-white border border-slate-200 px-1.5 py-0.5 rounded">
+                                      {item.sku}
+                                    </span>
+                                  </div>
+                                  <p className="text-[11px] text-gray-500 truncate">
+                                    {item.genericName} • {item.packagingUnit}
+                                  </p>
+                                </div>
+                                <span className="font-mono text-[11px] font-semibold text-emerald-700 shrink-0">
+                                  {receivedUnits.toLocaleString()} units
+                                </span>
+                              </div>
+                            ),
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -2368,6 +2532,44 @@ function BatchManagement() {
                 Please select an approved PO above to auto-load its receiving
                 stock specifications.
               </span>
+            </div>
+          )}
+
+          {/* Actionable Validation / Submission Error Summary right above the action buttons */}
+          {receiveErrorSummary.length > 0 && (
+            <div
+              role="alert"
+              className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-800 text-xs space-y-1.5"
+            >
+              <div className="flex items-center gap-2 font-bold text-red-900">
+                <AlertCircle className="w-4 h-4 text-red-600 shrink-0" />
+                <span>
+                  Unable to confirm receipt — {receiveErrorSummary.length}{" "}
+                  {receiveErrorSummary.length === 1 ? "issue" : "issues"} to
+                  fix:
+                </span>
+              </div>
+              <ul className="space-y-1 max-h-28 overflow-y-auto pl-6 list-disc">
+                {receiveErrorSummary.map((err) => (
+                  <li key={err.key} className="leading-snug">
+                    {err.skuKey !== null ? (
+                      <button
+                        type="button"
+                        onClick={() => scrollToSkuCard(err.skuKey)}
+                        className="text-left hover:underline cursor-pointer"
+                      >
+                        <span className="font-semibold">{err.label}:</span>{" "}
+                        {err.message}
+                      </button>
+                    ) : (
+                      <span>
+                        <span className="font-semibold">{err.label}:</span>{" "}
+                        {err.message}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
             </div>
           )}
 
@@ -2384,8 +2586,7 @@ function BatchManagement() {
               disabled={
                 isSubmitting ||
                 !selectedPoDetails ||
-                !receiveFormData.items ||
-                receiveFormData.items.length === 0
+                pendingReceiveItems.length === 0
               }
               className="btn-primary flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
@@ -2399,8 +2600,12 @@ function BatchManagement() {
                   <CheckCircle2 className="w-4 h-4" />
                   <span>
                     Confirm Stock Receipt
-                    {receiveFormData.items?.length > 1
-                      ? ` (All ${receiveFormData.items.length} Medicines)`
+                    {receiveSessionSummary.totalUnits > 0
+                      ? ` (${receiveSessionSummary.activeBatches} ${
+                          receiveSessionSummary.activeBatches === 1
+                            ? "Batch"
+                            : "Batches"
+                        } • ${receiveSessionSummary.totalUnits.toLocaleString()} units)`
                       : ""}
                   </span>
                 </>
