@@ -318,7 +318,7 @@ export const exportReorderQuotationPdf = (quotation, pharmacyNameFallback = "—
   const status = escapeHtml(quotation.status || "Pending");
   const priority = escapeHtml(quotation.priority || "Normal");
   const pharmacyName = escapeHtml(quotation.pharmacyName || pharmacyNameFallback || "—");
-  const supplierName = escapeHtml(quotation.supplierName || "—");
+  const supplierName = escapeHtml(quotation.supplierName || "TBD by Procurement");
   const requestedBy = escapeHtml(quotation.userName || "Pharmacist");
   const createdDate = quotation.createdAt
     ? escapeHtml(new Date(quotation.createdAt).toLocaleString())
@@ -343,9 +343,9 @@ export const exportReorderQuotationPdf = (quotation, pharmacyNameFallback = "—
           <td style="text-align:center;color:#64748b;">${idx + 1}</td>
           <td>
             <div style="font-weight:600;color:#0f172a;">${escapeHtml(item.genericName || item.brandName || item.skuCode || "—")}</div>
-            <div style="font-size:11px;color:#64748b;">SKU: ${escapeHtml(item.skuCode || "—")}${item.dosage ? ` • ${escapeHtml(item.dosage)}` : ""}</div>
+            <div style="font-size:11px;color:#64748b;">${item.skuCode ? `SKU: ${escapeHtml(item.skuCode)}` : `Form: ${escapeHtml(item.dosageForm || "—")}`}${item.dosageStrength || item.dosage ? ` • ${escapeHtml(item.dosageStrength || item.dosage)}` : ""}</div>
           </td>
-          <td>${escapeHtml(item.brandName || "—")}</td>
+          <td>${escapeHtml(item.brandName || "TBD by Procurement")}</td>
           <td>${escapeHtml(item.packagingUnit || "—")}</td>
           <td style="text-align:right;">${item.currentStock !== null && item.currentStock !== undefined ? Number(item.currentStock).toLocaleString() : "—"}</td>
           <td style="text-align:right;font-weight:600;">${requested.toLocaleString()}</td>

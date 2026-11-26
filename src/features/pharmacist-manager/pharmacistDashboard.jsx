@@ -234,13 +234,13 @@ function PharmacistDashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">
-                  Total SKUs
+                  Generic Stock Groups
                 </p>
                 <h3 className="text-2xl font-bold text-gray-900 mt-1">
                   {metrics.totalSkus}
                 </h3>
                 <span className="inline-block text-[11px] font-medium text-blue-600 mt-1">
-                  Active catalog items
+                  Active pooled medicines
                 </span>
               </div>
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100">
@@ -302,7 +302,7 @@ function PharmacistDashboard() {
                   {metrics.totalLowStock}
                 </h3>
                 <span className="inline-block text-[11px] font-medium text-amber-700 mt-1">
-                  &le; Safety minimum level
+                  &le; Reorder threshold
                 </span>
               </div>
               <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-amber-50 text-amber-600 border border-amber-100">

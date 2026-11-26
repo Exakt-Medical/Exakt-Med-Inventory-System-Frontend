@@ -40,7 +40,7 @@ import { getStockStatus } from "../../helpers/inventory";
 import useAuth from "../../hooks/useAuth";
 import reorderQuotationService from "../../services/reorderQuotation";
 import supplierService from "../../services/supplier";
-import skuService from "../../services/sku";
+import genericStockSettingService from "../../services/genericStockSetting";
 import { exportReorderQuotationPdf } from "../../utils/pdfExport";
 
 const extractDosageFromDescription = (description) => {
@@ -93,37 +93,35 @@ const extractDosageFromDescription = (description) => {
 
 const mapDtoToSku = (dto) => {
   return {
-    id: dto.id,
-    sku: dto.name || "",
-    name: dto.name || "",
+    id: dto.settingId ?? dto.id,
+    settingId: dto.settingId ?? dto.id,
+    sku: dto.packagingUnit || "",
+    name: dto.genericName || dto.drugDescription || "",
     medicineId: dto.medicineId,
-    brandName: dto.brandName || "",
-    genericName: dto.drugDescription || "",
+    brandName: dto.genericName || dto.drugDescription || "",
+    genericName: dto.genericName || dto.drugDescription || "",
     dosage:
       dto.dosageStrength ||
-      extractDosageFromDescription(dto.drugDescription) ||
+      extractDosageFromDescription(dto.genericName || dto.drugDescription) ||
       "",
     dosageStrength:
       dto.dosageStrength ||
-      extractDosageFromDescription(dto.drugDescription) ||
+      extractDosageFromDescription(dto.genericName || dto.drugDescription) ||
       "",
     dosageForm: dto.dosageForm || "",
     packagingUnit: dto.packagingUnit || "",
     type: dto.dosageForm || "General",
-    currentStock: Number(dto.units ?? 0),
-    units: Number(dto.units ?? 0),
+    currentStock: Number(dto.totalUnits ?? dto.units ?? 0),
+    units: Number(dto.totalUnits ?? dto.units ?? 0),
     minimumLevel: Number(dto.minimumLevel ?? 0),
     reorderLevel: Number(dto.reorderLevel ?? 0),
     maximumLevel: Number(dto.maximumLevel ?? 0),
+    brandCount: Number(dto.brandCount ?? 0),
+    activeBrandCount: Number(dto.activeBrandCount ?? 0),
+    brands: Array.isArray(dto.brands) ? dto.brands : [],
     pharmacyId: dto.pharmacyId,
     pharmacy: dto.pharmacyName || "",
-    facilityId: dto.facilityId,
-    facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
-    createdAt: dto.createdAt
-      ? String(dto.createdAt).split("T")[0]
-      : new Date().toISOString().split("T")[0],
-    updatedAt: dto.updatedAt ? String(dto.updatedAt).split("T")[0] : "",
   };
 };
 
@@ -375,17 +373,33 @@ function ReorderQuotationPage() {
     );
   }, [supplierList]);
 
-  // Fetch Sku Catalog for the pharmacy
+  // Fetch Generic Stock Settings catalog for the pharmacy
   const fetchSkuCatalog = useCallback(async () => {
     if (!targetPharmacyId) return;
     try {
       setIsLoadingSkuCatalog(true);
-      const data = await skuService.getDropdownSkus(targetPharmacyId);
+      const data = await genericStockSettingService.getDropdown(targetPharmacyId);
       if (Array.isArray(data)) {
-        setSkuCatalog(data);
+        setSkuCatalog(
+          data.map((g) => ({
+            id: g.settingId,
+            settingId: g.settingId,
+            medicineId: g.medicineId,
+            genericName: g.genericName || "",
+            dosage: g.dosageStrength || "",
+            dosageStrength: g.dosageStrength || "",
+            dosageForm: g.dosageForm || "",
+            packagingUnit: g.packagingUnit || "",
+            currentStock: Number(g.totalUnits ?? 0),
+            minimumLevel: Number(g.minimumLevel ?? 0),
+            reorderLevel: Number(g.reorderLevel ?? 0),
+            maximumLevel: Number(g.maximumLevel ?? 0),
+            activeBrandCount: Number(g.activeBrandCount ?? 0),
+          })),
+        );
       }
     } catch (err) {
-      console.error("Failed to load SKU catalog for quotation:", err);
+      console.error("Failed to load generic catalog for quotation:", err);
     } finally {
       setIsLoadingSkuCatalog(false);
     }
@@ -395,7 +409,7 @@ function ReorderQuotationPage() {
     fetchSkuCatalog();
   }, [fetchSkuCatalog]);
 
-  // Fetch SKUs that need reordering for Tab 2
+  // Fetch Generic Medicine groups that need reordering for Tab 2
   const fetchReorderSkus = useCallback(
     async (
       page = 1,
@@ -411,14 +425,12 @@ function ReorderQuotationPage() {
       }
       try {
         setIsLoadingReorderSkus(true);
-        const data = await skuService.getReorderNeededSkus({
+        const data = await genericStockSettingService.getReorderNeededGroups({
           pharmacyId: targetPharmacyId,
           search: query ? query.trim() : "",
           stockStatus: urgency,
           page: Math.max(0, page - 1),
           size: reorderItemsPerPage,
-          sortBy: "genericName",
-          sortDir: "ASC",
         });
 
         if (data && Array.isArray(data.content)) {
@@ -469,7 +481,7 @@ function ReorderQuotationPage() {
       return;
     }
     try {
-      const summary = await skuService.getReorderNeededSummary(targetPharmacyId);
+      const summary = await genericStockSettingService.getReorderNeededSummary(targetPharmacyId);
       if (summary) {
         setReorderSummary({
           totalReorderCount: Number(summary.totalReorderCount || 0),
@@ -540,36 +552,37 @@ function ReorderQuotationPage() {
     setSelectedSkuIds(criticalIds);
   };
 
-  // Open Create Modal pre-populated with selected SKUs
-  const handleCreateQuotationWithSkus = (skusToInclude = []) => {
+  // Open Create Modal pre-populated with selected generic groups
+  const handleCreateQuotationWithSkus = (groupsToInclude = []) => {
     setIsEditing(false);
     setEditingQuotationId(null);
 
-    const items = skusToInclude.map((sku) => {
-      const max = Number(sku.maximumLevel) || 0;
-      const current = Number(sku.currentStock) || 0;
+    const items = groupsToInclude.map((group) => {
+      const max = Number(group.maximumLevel) || 0;
+      const current = Number(group.currentStock) || 0;
       const defaultQty =
-        sku.maximumLevel !== undefined &&
-        sku.currentStock !== undefined &&
+        group.maximumLevel !== undefined &&
+        group.currentStock !== undefined &&
         max > current
           ? Math.max(1, max - current)
           : 10;
 
+      const settingId = group.settingId ?? group.id;
       return {
-        skuId: sku.id,
-        skuCode: sku.sku || sku.name,
-        brandName: sku.brandName,
-        genericName: sku.genericName || sku.name,
-        dosage: sku.dosage || sku.dosageStrength || "",
-        packagingUnit: sku.packagingUnit || "",
-        currentStock: sku.currentStock ?? 0,
+        genericStockSettingId: settingId,
+        skuId: settingId,
+        genericName: group.genericName || group.name,
+        dosage: group.dosage || group.dosageStrength || "",
+        dosageForm: group.dosageForm || "",
+        packagingUnit: group.packagingUnit || "",
+        currentStock: group.currentStock ?? 0,
         requestedUnits: defaultQty,
         notes: "",
       };
     });
 
     setFormData({
-      supplierId: activeSuppliers[0]?.id ? String(activeSuppliers[0].id) : "",
+      supplierId: "",
       priority: items.some((i) => i.currentStock <= 0) ? "Urgent" : "Normal",
       notes: "",
       items: items,
@@ -579,10 +592,12 @@ function ReorderQuotationPage() {
     setIsFormModalOpen(true);
   };
 
-  // Available SKUs not yet added to form
+  // Available generic groups not yet added to form
   const availableSkusForForm = useMemo(() => {
-    const addedSkuIds = new Set(formData.items.map((i) => i.skuId));
-    return skuCatalog.filter((sku) => !addedSkuIds.has(sku.id));
+    const addedIds = new Set(
+      formData.items.map((i) => i.genericStockSettingId ?? i.skuId),
+    );
+    return skuCatalog.filter((g) => !addedIds.has(g.settingId ?? g.id));
   }, [skuCatalog, formData.items]);
 
   // Open Create Modal
@@ -590,7 +605,7 @@ function ReorderQuotationPage() {
     setIsEditing(false);
     setEditingQuotationId(null);
     setFormData({
-      supplierId: activeSuppliers[0]?.id ? String(activeSuppliers[0].id) : "",
+      supplierId: "",
       priority: "Normal",
       notes: "",
       items: [],
@@ -605,55 +620,63 @@ function ReorderQuotationPage() {
     setIsEditing(true);
     setEditingQuotationId(quotation.id);
     setFormData({
-      supplierId: String(quotation.supplierId || ""),
+      supplierId: quotation.supplierId ? String(quotation.supplierId) : "",
       priority: quotation.priority || "Normal",
       notes: quotation.notes || "",
-      items: (quotation.items || []).map((it) => ({
-        skuId: it.skuId,
-        skuCode: it.skuCode,
-        brandName: it.brandName,
-        genericName: it.genericName,
-        dosage: it.dosageStrength || it.dosageForm,
-        packagingUnit: it.packagingUnit,
-        currentStock: it.currentStock,
-        requestedUnits: it.requestedUnits,
-        notes: it.notes || "",
-      })),
+      items: (quotation.items || []).map((it) => {
+        const settingId = it.genericStockSettingId ?? it.skuId;
+        return {
+          genericStockSettingId: settingId,
+          skuId: settingId,
+          genericName: it.genericName,
+          dosage: it.dosageStrength || it.dosageForm || "",
+          dosageForm: it.dosageForm || "",
+          packagingUnit: it.packagingUnit || "",
+          currentStock: it.currentStock,
+          requestedUnits: it.requestedUnits,
+          notes: it.notes || "",
+        };
+      }),
     });
     setFormErrors({});
     setSelectedSkuToAdd("");
     setIsFormModalOpen(true);
   };
 
-  // Add SKU to Quotation Form
-  const handleAddItemToForm = (skuId) => {
-    if (!skuId) return;
-    const targetSku =
-      skuCatalog.find((s) => String(s.id) === String(skuId)) ||
-      reorderSkus.find((s) => String(s.id) === String(skuId));
-    if (!targetSku) return;
+  // Add Generic Medicine Group to Quotation Form
+  const handleAddItemToForm = (settingId) => {
+    if (!settingId) return;
+    const targetGroup =
+      skuCatalog.find((s) => String(s.settingId ?? s.id) === String(settingId)) ||
+      reorderSkus.find((s) => String(s.settingId ?? s.id) === String(settingId));
+    if (!targetGroup) return;
 
-    if (formData.items.some((i) => String(i.skuId) === String(targetSku.id))) {
+    const resolvedId = targetGroup.settingId ?? targetGroup.id;
+    if (
+      formData.items.some(
+        (i) => String(i.genericStockSettingId ?? i.skuId) === String(resolvedId),
+      )
+    ) {
       setFormErrors((prev) => ({
         ...prev,
-        itemAdd: "This medicine is already added to the quotation.",
+        itemAdd: "This generic medicine is already added to the quotation.",
       }));
       return;
     }
 
     const defaultQty =
-      targetSku.maximumLevel && targetSku.currentStock !== undefined
-        ? Math.max(1, targetSku.maximumLevel - targetSku.currentStock)
+      targetGroup.maximumLevel && targetGroup.currentStock !== undefined
+        ? Math.max(1, targetGroup.maximumLevel - targetGroup.currentStock)
         : 10;
 
     const newItem = {
-      skuId: targetSku.id,
-      skuCode: targetSku.sku || targetSku.name,
-      brandName: targetSku.brandName,
-      genericName: targetSku.genericName || targetSku.name,
-      dosage: targetSku.dosage || targetSku.dosageStrength || "",
-      packagingUnit: targetSku.packagingUnit || "",
-      currentStock: targetSku.currentStock,
+      genericStockSettingId: resolvedId,
+      skuId: resolvedId,
+      genericName: targetGroup.genericName || targetGroup.name,
+      dosage: targetGroup.dosage || targetGroup.dosageStrength || "",
+      dosageForm: targetGroup.dosageForm || "",
+      packagingUnit: targetGroup.packagingUnit || "",
+      currentStock: targetGroup.currentStock ?? 0,
       requestedUnits: defaultQty,
       notes: "",
     };
@@ -713,11 +736,8 @@ function ReorderQuotationPage() {
     e.preventDefault();
     const errors = {};
 
-    if (!formData.supplierId) {
-      errors.supplierId = "Please select a target supplier.";
-    }
     if (!formData.items || formData.items.length === 0) {
-      errors.items = "Please add at least one medicine item to the quotation.";
+      errors.items = "Please add at least one generic medicine to the quotation.";
     }
 
     const hasInvalidQty = formData.items.some(
@@ -736,11 +756,11 @@ function ReorderQuotationPage() {
       setIsSubmitting(true);
       const payload = {
         pharmacyId: targetPharmacyId,
-        supplierId: Number(formData.supplierId),
+        supplierId: formData.supplierId ? Number(formData.supplierId) : null,
         priority: formData.priority,
         notes: formData.notes ? formData.notes.trim() : "",
         items: formData.items.map((i) => ({
-          skuId: i.skuId,
+          genericStockSettingId: Number(i.genericStockSettingId ?? i.skuId),
           requestedUnits: Number(i.requestedUnits),
           estimatedPrice: 0,
           notes: i.notes ? i.notes.trim() : "",
@@ -1210,7 +1230,7 @@ function ReorderQuotationPage() {
                         <div className="flex items-center gap-2">
                           <Truck className="w-4 h-4 text-gray-400 shrink-0" />
                           <span className="font-semibold text-gray-900 text-xs">
-                            {quotation.supplierName || "Unassigned"}
+                            {quotation.supplierName || "TBD by Procurement"}
                           </span>
                         </div>
                       </td>
@@ -1474,7 +1494,7 @@ function ReorderQuotationPage() {
                       </button>
                     </th>
                     <th scope="col" className="px-6 py-3.5">
-                      SKU & Medicine
+                      Generic Medicine & Pool
                     </th>
                     <th scope="col" className="px-6 py-3.5">
                       Form & Packaging
@@ -1569,16 +1589,25 @@ function ReorderQuotationPage() {
                                 <Pill className="w-4 h-4" />
                               </div>
                               <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-semibold text-gray-900 text-sm">
-                                    {item.brandName}
+                                    {item.genericName}
                                   </span>
-                                  <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
-                                    {item.sku}
-                                  </span>
+                                  {item.dosage && (
+                                    <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
+                                      {item.dosage}
+                                    </span>
+                                  )}
                                 </div>
-                                <div className="text-xs text-gray-500">
-                                  {item.genericName} {item.dosage && `• ${item.dosage}`}
+                                <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-1.5">
+                                  <Layers className="w-3 h-3 text-slate-400" />
+                                  <span>
+                                    {item.activeBrandCount || item.brandCount || 0} Active{" "}
+                                    {(item.activeBrandCount || item.brandCount || 0) === 1
+                                      ? "Brand"
+                                      : "Brands"}{" "}
+                                    pooled
+                                  </span>
                                 </div>
                               </div>
                             </div>
@@ -1713,8 +1742,7 @@ function ReorderQuotationPage() {
               <Dropdown
                 id="quote-supplier"
                 name="supplierId"
-                label="Target Supplier"
-                required
+                label="Target Supplier (Optional)"
                 value={formData.supplierId}
                 onChange={(e) =>
                   setFormData((prev) => ({
@@ -1726,10 +1754,16 @@ function ReorderQuotationPage() {
                 options={
                   isLoadingSuppliers && activeSuppliers.length === 0
                     ? [{ value: "", label: "Loading suppliers..." }]
-                    : activeSuppliers.map((s) => ({
-                        value: s.id,
-                        label: s.name,
-                      }))
+                    : [
+                        {
+                          value: "",
+                          label: "Optional — Procurement will assign supplier",
+                        },
+                        ...activeSuppliers.map((s) => ({
+                          value: String(s.id),
+                          label: s.name,
+                        })),
+                      ]
                 }
               />
               {formErrors.supplierId && (
@@ -1801,26 +1835,22 @@ function ReorderQuotationPage() {
                     options={availableSkusForForm}
                     value={selectedSkuToAdd}
                     onChange={(e) => setSelectedSkuToAdd(e.target.value)}
-                    onSelect={(sku) =>
-                      setSelectedSkuToAdd(sku ? String(sku.id) : "")
+                    onSelect={(g) =>
+                      setSelectedSkuToAdd(g ? String(g.settingId ?? g.id) : "")
                     }
-                    placeholder="Search medicine from catalog..."
+                    placeholder="Search generic medicine from catalog..."
                     isLoading={isLoadingSkuCatalog}
-                    loadingText="Loading catalog..."
-                    emptyText="No matching medicines in catalog"
-                    getOptionValue={(s) => String(s.id)}
+                    loadingText="Loading generic catalog..."
+                    emptyText="No matching generic medicines in catalog"
+                    getOptionValue={(s) => String(s.settingId ?? s.id)}
                     getOptionLabel={(s) =>
-                      s.brandName
-                        ? `${s.brandName} (${s.genericName || s.name})`
-                        : s.name || s.sku
+                      `${s.genericName || s.name}${s.packagingUnit ? ` — ${s.packagingUnit}` : ""}`
                     }
                     getOptionSubtext={(s) =>
-                      `SKU: ${s.sku || s.name} • Stock: ${s.currentStock ?? 0}${s.dosage ? ` • ${s.dosage}` : ""}`
+                      `Pooled Stock: ${s.currentStock ?? 0}${s.dosage ? ` • ${s.dosage}` : ""}${s.dosageForm ? ` • ${s.dosageForm}` : ""}`
                     }
                     getDisplayValue={(s) =>
-                      s.brandName
-                        ? `${s.brandName} (${s.sku || s.name})`
-                        : s.sku || s.name
+                      `${s.genericName || s.name}${s.packagingUnit ? ` (${s.packagingUnit})` : ""}`
                     }
                     inputClassName="!py-1.5 !text-xs !px-3"
                     className="w-full text-xs"
@@ -1853,8 +1883,8 @@ function ReorderQuotationPage() {
               <table className="w-full text-left text-xs text-gray-600">
                 <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
                   <tr>
-                    <th className="px-3.5 py-2.5">Medication & SKU</th>
-                    <th className="px-3.5 py-2.5 w-24">Current Stock</th>
+                    <th className="px-3.5 py-2.5">Generic Medicine & Packaging</th>
+                    <th className="px-3.5 py-2.5 w-24">Pooled Stock</th>
                     <th className="px-3.5 py-2.5 w-32">Requested Units *</th>
                     <th className="px-3.5 py-2.5 w-48">Item Remark</th>
                     <th className="px-3.5 py-2.5 w-10 text-center">Action</th>
@@ -1868,15 +1898,17 @@ function ReorderQuotationPage() {
                         <td className="px-3.5 py-2.5">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-gray-900">
-                              {item.brandName || item.skuCode}
+                              {item.genericName}
                             </span>
-                            <span className="font-mono text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                              {item.skuCode}
-                            </span>
+                            {item.dosage && (
+                              <span className="font-mono text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
+                                {item.dosage}
+                              </span>
+                            )}
                           </div>
                           <div className="text-[11px] text-gray-500">
-                            {item.genericName}{" "}
-                            {item.dosage && `• ${item.dosage}`}
+                            {item.dosageForm ? `${item.dosageForm} • ` : ""}
+                            {item.packagingUnit || "—"} • Brand chosen by Procurement
                           </div>
                         </td>
 
@@ -2021,7 +2053,10 @@ function ReorderQuotationPage() {
                   </div>
                   <span className="text-[11px] text-gray-500">
                     Target Supplier:{" "}
-                    <strong>{selectedQuotationForView.supplierName}</strong>
+                    <strong>
+                      {selectedQuotationForView.supplierName ||
+                        "TBD by Procurement"}
+                    </strong>
                   </span>
                 </div>
               </div>

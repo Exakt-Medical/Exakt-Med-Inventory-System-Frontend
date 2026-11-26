@@ -41,6 +41,7 @@ import { getStockStatus } from "../../helpers/inventory";
 import { DEFAULT_ORDER_FORM } from "../../utils/constants";
 import useAuth from "../../hooks/useAuth";
 import skuService from "../../services/sku";
+import genericStockSettingService from "../../services/genericStockSetting";
 import supplierService from "../../services/supplier";
 import orderService from "../../services/order";
 import reorderQuotationService from "../../services/reorderQuotation";
@@ -95,38 +96,38 @@ const extractDosageFromDescription = (description) => {
 };
 
 const mapDtoToSku = (dto) => {
+  const brands = Array.isArray(dto.brands) ? dto.brands : [];
+  const firstBrand = brands[0] || null;
   return {
-    id: dto.id,
-    sku: dto.name || "",
-    name: dto.name || "",
+    id: dto.settingId ?? dto.id,
+    settingId: dto.settingId ?? dto.id,
+    sku: firstBrand?.name || dto.packagingUnit || "",
+    name: dto.genericName || dto.drugDescription || "",
     medicineId: dto.medicineId,
-    brandName: dto.brandName || "",
-    genericName: dto.drugDescription || "",
+    brandName: dto.genericName || dto.drugDescription || "",
+    genericName: dto.genericName || dto.drugDescription || "",
     dosage:
       dto.dosageStrength ||
-      extractDosageFromDescription(dto.drugDescription) ||
+      extractDosageFromDescription(dto.genericName || dto.drugDescription) ||
       "",
     dosageStrength:
       dto.dosageStrength ||
-      extractDosageFromDescription(dto.drugDescription) ||
+      extractDosageFromDescription(dto.genericName || dto.drugDescription) ||
       "",
     dosageForm: dto.dosageForm || "",
     packagingUnit: dto.packagingUnit || "",
     type: dto.dosageForm || "General",
-    currentStock: Number(dto.units ?? 0),
-    units: Number(dto.units ?? 0),
+    currentStock: Number(dto.totalUnits ?? dto.units ?? 0),
+    units: Number(dto.totalUnits ?? dto.units ?? 0),
     minimumLevel: Number(dto.minimumLevel ?? 0),
     reorderLevel: Number(dto.reorderLevel ?? 0),
     maximumLevel: Number(dto.maximumLevel ?? 0),
+    brandCount: Number(dto.brandCount ?? brands.length),
+    activeBrandCount: Number(dto.activeBrandCount ?? brands.length),
+    brands,
     pharmacyId: dto.pharmacyId,
     pharmacy: dto.pharmacyName || "",
-    facilityId: dto.facilityId,
-    facility: dto.pharmacyName || dto.facilityName || "",
     status: "Active",
-    createdAt: dto.createdAt
-      ? String(dto.createdAt).split("T")[0]
-      : new Date().toISOString().split("T")[0],
-    updatedAt: dto.updatedAt ? String(dto.updatedAt).split("T")[0] : "",
   };
 };
 
@@ -173,7 +174,7 @@ function OrderRequest() {
     }
     try {
       const summary =
-        await skuService.getReorderNeededSummary(targetPharmacyId);
+        await genericStockSettingService.getReorderNeededSummary(targetPharmacyId);
       if (summary) {
         setReorderSummary({
           totalReorderCount: Number(summary.totalReorderCount || 0),
@@ -205,7 +206,7 @@ function OrderRequest() {
           return;
         }
 
-        const data = await skuService.getReorderNeededSkus({
+        const data = await genericStockSettingService.getReorderNeededGroups({
           pharmacyId: targetPharmacyId,
           search: query ? query.trim() : "",
           stockStatus: urgency,
@@ -372,6 +373,13 @@ function OrderRequest() {
   const [isSubmittingConversion, setIsSubmittingConversion] = useState(false);
   const [convertFormErrors, setConvertFormErrors] = useState({});
 
+  // Generic -> Brand SKUs cache & Inline Brand Creation modal state (for Procurement)
+  const [brandsBySettingId, setBrandsBySettingId] = useState({});
+  const [inlineBrandTarget, setInlineBrandTarget] = useState(null);
+  const [inlineBrandName, setInlineBrandName] = useState("");
+  const [inlineBrandError, setInlineBrandError] = useState(null);
+  const [isCreatingInlineBrand, setIsCreatingInlineBrand] = useState(false);
+
   // Reject Quotation Modal State
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [quotationToReject, setQuotationToReject] = useState(null);
@@ -444,41 +452,198 @@ function OrderRequest() {
   // Count pending quotations awaiting review
   const pendingQuotationsCount = quotationSummary.pendingCount;
 
-  // Conversion Handlers (Review quotation, remove SKUs, set prices, convert to PO)
-  const handleOpenConvertModal = (quotation) => {
+  // Load active brands for a generic stock setting
+  const loadBrandsForSetting = useCallback(async (settingId) => {
+    if (!settingId) return [];
+    try {
+      const list = await genericStockSettingService.getActiveBrands(settingId);
+      const normalized = Array.isArray(list) ? list : [];
+      setBrandsBySettingId((prev) => ({ ...prev, [settingId]: normalized }));
+      return normalized;
+    } catch (err) {
+      console.error("Failed to load active brands for generic setting:", settingId, err);
+      return [];
+    }
+  }, []);
+
+  // Conversion Handlers (Review generic quotation, choose/create brand SKU per line, set prices, convert to PO)
+  const handleOpenConvertModal = async (quotation) => {
     setQuotationToConvert(quotation);
+    const rawItems = quotation.items || [];
+
+    const uniqueSettingIds = Array.from(
+      new Set(
+        rawItems
+          .map((it) => it.genericStockSettingId)
+          .filter(Boolean),
+      ),
+    );
+
+    const loadedMap = {};
+    await Promise.all(
+      uniqueSettingIds.map(async (sid) => {
+        loadedMap[sid] = await loadBrandsForSetting(sid);
+      }),
+    );
+
     setConvertFormData({
-      supplierId: String(quotation.supplierId || ""),
+      supplierId: quotation.supplierId ? String(quotation.supplierId) : "",
       priority: quotation.priority || "Normal",
       notes: quotation.notes || "",
-      items: (quotation.items || []).map((it) => ({
-        skuId: it.skuId,
-        skuCode: it.skuCode,
-        brandName: it.brandName,
-        genericName: it.genericName,
-        dosage: it.dosageStrength || it.dosageForm,
-        packagingUnit: it.packagingUnit,
-        currentStock: it.currentStock,
-        orderedUnits: it.requestedUnits,
-        price: it.estimatedPrice || "",
-      })),
+      items: rawItems.map((it, idx) => {
+        const settingId = it.genericStockSettingId;
+        const availableBrands = settingId ? loadedMap[settingId] || [] : [];
+        let chosenSkuId = it.skuId ? String(it.skuId) : "";
+        let chosenBrandName = it.brandName || "";
+        let chosenSkuCode = it.skuCode || "";
+
+        if (!chosenSkuId && availableBrands.length === 1) {
+          chosenSkuId = String(availableBrands[0].id);
+          chosenBrandName = availableBrands[0].brandName || "";
+          chosenSkuCode = availableBrands[0].name || "";
+        }
+
+        return {
+          lineKey: String(it.id || `line_${idx}`),
+          quotationItemId: it.id || null,
+          genericStockSettingId: settingId,
+          medicineId: it.medicineId || null,
+          skuId: chosenSkuId,
+          skuCode: chosenSkuCode,
+          brandName: chosenBrandName,
+          genericName: it.genericName || "",
+          dosage: it.dosageStrength || "",
+          dosageForm: it.dosageForm || "",
+          packagingUnit: it.packagingUnit || "",
+          currentStock: it.currentStock ?? 0,
+          orderedUnits: it.requestedUnits || 1,
+          price: it.estimatedPrice || "",
+        };
+      }),
     });
     setConvertFormErrors({});
     setIsConvertModalOpen(true);
   };
 
-  const handleRemoveItemFromConversion = (skuId) => {
+  const handleSelectBrandInConversion = (lineKey, selectedSkuId) => {
     setConvertFormData((prev) => ({
       ...prev,
-      items: prev.items.filter((i) => i.skuId !== skuId),
+      items: prev.items.map((item) => {
+        if (item.lineKey !== lineKey) return item;
+        const brands = brandsBySettingId[item.genericStockSettingId] || [];
+        const matched = brands.find((b) => String(b.id) === String(selectedSkuId));
+        return {
+          ...item,
+          skuId: selectedSkuId ? String(selectedSkuId) : "",
+          brandName: matched?.brandName || "",
+          skuCode: matched?.name || "",
+        };
+      }),
     }));
   };
 
-  const handleUpdateItemQtyInConversion = (skuId, qty) => {
+  const handleOpenInlineBrandModal = (lineItem, targetMode = "convert") => {
+    setInlineBrandTarget({
+      targetMode,
+      lineKey: lineItem.lineKey || lineItem.rowId,
+      settingId: lineItem.genericStockSettingId,
+      medicineId: lineItem.medicineId,
+      genericName: lineItem.genericName,
+      dosageForm: lineItem.dosageForm,
+      dosageStrength: lineItem.dosage,
+      packagingUnit: lineItem.packagingUnit,
+    });
+    setInlineBrandName("");
+    setInlineBrandError(null);
+  };
+
+  const handleCreateInlineBrandSku = async (e) => {
+    e.preventDefault();
+    if (!inlineBrandTarget) return;
+    const trimmedBrand = inlineBrandName.trim().toUpperCase();
+    if (!trimmedBrand) {
+      setInlineBrandError("Brand name is required.");
+      return;
+    }
+
+    setIsCreatingInlineBrand(true);
+    setInlineBrandError(null);
+    try {
+      const created = await skuService.createSku({
+        pharmacyId: Number(targetPharmacyId),
+        medicineId: Number(inlineBrandTarget.medicineId),
+        brandName: trimmedBrand,
+        dosageForm: inlineBrandTarget.dosageForm || undefined,
+        dosageStrength: inlineBrandTarget.dosageStrength || undefined,
+        packagingUnit: inlineBrandTarget.packagingUnit || undefined,
+        status: "Active",
+      });
+
+      const sid = inlineBrandTarget.settingId || created.genericStockSettingId;
+      if (sid) {
+        setBrandsBySettingId((prev) => {
+          const existing = prev[sid] || [];
+          const next = [...existing.filter((b) => b.id !== created.id), created];
+          return { ...prev, [sid]: next };
+        });
+      }
+
+      if (inlineBrandTarget.targetMode === "order") {
+        setOrderForm((prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            (item.rowId || item.sku) === inlineBrandTarget.lineKey
+              ? {
+                  ...item,
+                  id: created.id,
+                  skuId: String(created.id),
+                  sku: created.name || "",
+                  brandName: created.brandName || trimmedBrand,
+                }
+              : item,
+          ),
+        }));
+      } else {
+        setConvertFormData((prev) => ({
+          ...prev,
+          items: prev.items.map((item) =>
+            item.lineKey === inlineBrandTarget.lineKey
+              ? {
+                  ...item,
+                  skuId: String(created.id),
+                  brandName: created.brandName || trimmedBrand,
+                  skuCode: created.name || "",
+                }
+              : item,
+          ),
+        }));
+      }
+      setInlineBrandTarget(null);
+      setInlineBrandName("");
+    } catch (err) {
+      console.error("Failed to create brand SKU inline:", err);
+      setInlineBrandError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to create brand SKU.",
+      );
+    } finally {
+      setIsCreatingInlineBrand(false);
+    }
+  };
+
+  const handleRemoveItemFromConversion = (lineKey) => {
+    setConvertFormData((prev) => ({
+      ...prev,
+      items: prev.items.filter((i) => i.lineKey !== lineKey),
+    }));
+  };
+
+  const handleUpdateItemQtyInConversion = (lineKey, qty) => {
     setConvertFormData((prev) => ({
       ...prev,
       items: prev.items.map((i) =>
-        i.skuId === skuId
+        i.lineKey === lineKey
           ? {
               ...i,
               orderedUnits:
@@ -489,10 +654,10 @@ function OrderRequest() {
     }));
   };
 
-  const handleUpdateItemPriceInConversion = (skuId, price) => {
+  const handleUpdateItemPriceInConversion = (lineKey, price) => {
     setConvertFormData((prev) => ({
       ...prev,
-      items: prev.items.map((i) => (i.skuId === skuId ? { ...i, price } : i)),
+      items: prev.items.map((i) => (i.lineKey === lineKey ? { ...i, price } : i)),
     }));
   };
 
@@ -512,10 +677,24 @@ function OrderRequest() {
 
   const handleSubmitConversion = async (e) => {
     e.preventDefault();
+    if (!convertFormData.supplierId) {
+      setConvertFormErrors({
+        general: "Please select a target supplier before converting to a Purchase Order.",
+      });
+      return;
+    }
     if (!convertFormData.items || convertFormData.items.length === 0) {
       setConvertFormErrors({
         general:
           "Please include at least one medicine item in the purchase order.",
+      });
+      return;
+    }
+
+    const missingBrandItem = convertFormData.items.find((it) => !it.skuId);
+    if (missingBrandItem) {
+      setConvertFormErrors({
+        general: `Please select or create a Brand SKU for "${missingBrandItem.genericName}" before generating the purchase order.`,
       });
       return;
     }
@@ -525,7 +704,7 @@ function OrderRequest() {
     );
     if (missingPriceItem) {
       setConvertFormErrors({
-        general: `Please enter the negotiated total price for "${missingPriceItem.brandName || missingPriceItem.skuCode}" before generating the purchase order.`,
+        general: `Please enter the negotiated total price for "${missingPriceItem.brandName || missingPriceItem.genericName}" before generating the purchase order.`,
       });
       return;
     }
@@ -538,7 +717,8 @@ function OrderRequest() {
         notes: convertFormData.notes,
         totalPrice: computedConversionTotalCost,
         items: convertFormData.items.map((i) => ({
-          skuId: i.skuId,
+          quotationItemId: i.quotationItemId || undefined,
+          skuId: Number(i.skuId),
           orderedUnits: Number(i.orderedUnits) || 1,
           price: Number(i.price) || 0,
         })),
@@ -731,11 +911,17 @@ function OrderRequest() {
         ? Math.max(1, max - current)
         : 1;
 
+    const brands = Array.isArray(sku.brands) ? sku.brands : [];
+    const autoBrand = brands.length === 1 ? brands[0] : null;
+    const settingId = sku.settingId || sku.id;
     return {
-      rowId: `catalog_${sku.id || sku.sku}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-      id: sku.id,
-      sku: sku.sku,
-      brandName: sku.brandName,
+      rowId: `catalog_${settingId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      id: autoBrand ? autoBrand.id : null,
+      skuId: autoBrand ? String(autoBrand.id) : "",
+      genericStockSettingId: settingId,
+      medicineId: sku.medicineId || null,
+      sku: autoBrand?.name || "",
+      brandName: autoBrand?.brandName || "",
       genericName: sku.genericName,
       dosage: sku.dosage,
       dosageForm: sku.dosageForm,
@@ -750,11 +936,29 @@ function OrderRequest() {
     };
   };
 
-  // Open Multi-Item Requisition Modal with selected items (or empty list by default)
-  const handleOpenMultiOrderModal = (initialSkusToOrder = []) => {
+  // Open Multi-Item Requisition Modal with selected generic groups (or empty list by default)
+  const handleOpenMultiOrderModal = async (initialSkusToOrder = []) => {
     let itemsToInclude = [];
 
     if (Array.isArray(initialSkusToOrder) && initialSkusToOrder.length > 0) {
+      const seedMap = {};
+      const missingSettingIds = [];
+      for (const g of initialSkusToOrder) {
+        const sid = g.settingId || g.id;
+        if (sid) {
+          if (Array.isArray(g.brands) && g.brands.length > 0) {
+            seedMap[sid] = g.brands;
+          } else {
+            missingSettingIds.push(sid);
+          }
+        }
+      }
+      if (Object.keys(seedMap).length > 0) {
+        setBrandsBySettingId((prev) => ({ ...prev, ...seedMap }));
+      }
+      if (missingSettingIds.length > 0) {
+        await Promise.all(missingSettingIds.map((sid) => loadBrandsForSetting(sid)));
+      }
       itemsToInclude = initialSkusToOrder.map(buildLineItem);
     }
 
@@ -779,6 +983,24 @@ function OrderRequest() {
     setModalMode("order");
   };
 
+  const handleSelectBrandInOrder = (rowKey, selectedSkuId) => {
+    setOrderForm((prev) => ({
+      ...prev,
+      items: prev.items.map((item) => {
+        if ((item.rowId || item.sku) !== rowKey) return item;
+        const brands = brandsBySettingId[item.genericStockSettingId] || [];
+        const matched = brands.find((b) => String(b.id) === String(selectedSkuId));
+        return {
+          ...item,
+          id: matched ? matched.id : null,
+          skuId: selectedSkuId ? String(selectedSkuId) : "",
+          brandName: matched?.brandName || "",
+          sku: matched?.name || "",
+        };
+      }),
+    }));
+  };
+
   // Open Order Modal for a single row button
   const handleOpenSingleOrderModal = (sku) => {
     handleOpenMultiOrderModal([sku]);
@@ -797,24 +1019,40 @@ function OrderRequest() {
     setSkuToAdd("");
   };
 
-  // Add Item to Order Form within the Modal from SKU Catalog
-  const handleAddItemToForm = (skuCode) => {
-    if (!skuCode) return;
-    const targetSku = currentFacilitySkus.find((s) => s.sku === skuCode);
-    if (!targetSku) return;
+  // Add Generic Group to Order Form within the Modal from Threshold Alerts
+  const handleAddItemToForm = async (settingId) => {
+    if (!settingId) return;
+    const targetGroup = currentFacilitySkus.find(
+      (s) => String(s.settingId ?? s.id) === String(settingId),
+    );
+    if (!targetGroup) return;
 
-    if (orderForm.items.some((i) => i.sku === targetSku.sku)) {
+    const resolvedSettingId = targetGroup.settingId ?? targetGroup.id;
+    if (
+      orderForm.items.some(
+        (i) => String(i.genericStockSettingId) === String(resolvedSettingId),
+      )
+    ) {
       setFormErrors((prev) => ({
         ...prev,
         itemAdd:
-          "A standard inventory row for this medicine is already in the order.",
+          "This generic medicine is already added to the purchase order.",
       }));
       return;
     }
 
+    if (Array.isArray(targetGroup.brands) && targetGroup.brands.length > 0) {
+      setBrandsBySettingId((prev) => ({
+        ...prev,
+        [resolvedSettingId]: targetGroup.brands,
+      }));
+    } else {
+      await loadBrandsForSetting(resolvedSettingId);
+    }
+
     setOrderForm((prev) => ({
       ...prev,
-      items: [...prev.items, buildLineItem(targetSku)],
+      items: [...prev.items, buildLineItem(targetGroup)],
     }));
     setFormErrors((prev) => ({ ...prev, itemAdd: "", items: "" }));
     setSkuToAdd("");
@@ -866,11 +1104,15 @@ function OrderRequest() {
     return orderForm.items.reduce((sum, i) => sum + (Number(i.price) || 0), 0);
   }, [orderForm.items]);
 
-  // Available SKUs that need restocking in active facility and haven't had a standard order row added yet
+  // Available generic groups that need restocking and haven't been added yet
   const availableSkusToAdd = useMemo(() => {
-    const addedCatalogSkus = new Set(orderForm.items.map((i) => i.sku));
+    const addedSettingIds = new Set(
+      orderForm.items.map((i) => String(i.genericStockSettingId)),
+    );
     return currentFacilitySkus.filter(
-      (s) => s.currentStock <= s.reorderLevel && !addedCatalogSkus.has(s.sku),
+      (s) =>
+        s.currentStock <= s.reorderLevel &&
+        !addedSettingIds.has(String(s.settingId ?? s.id)),
     );
   }, [currentFacilitySkus, orderForm.items]);
 
@@ -885,6 +1127,11 @@ function OrderRequest() {
 
     if (!orderForm.items || orderForm.items.length === 0) {
       errors.items = "Please add at least one medicine to this purchase order.";
+    }
+
+    const missingBrand = orderForm.items.find((i) => !i.skuId);
+    if (missingBrand) {
+      errors.items = `Please choose or create a Brand SKU for "${missingBrand.genericName}" before submitting.`;
     }
 
     if (orderForm.items.some((i) => !i.quantity || Number(i.quantity) <= 0)) {
@@ -931,16 +1178,11 @@ function OrderRequest() {
       priority: orderForm.priority || "Normal",
       totalPrice: Math.round(computedTotalCost),
       notes: orderForm.notes || "",
-      items: orderForm.items.map((i) => {
-        const matchedSku = skuList.find(
-          (s) => s.sku === i.sku || s.id === i.id,
-        );
-        return {
-          skuId: matchedSku?.id || i.id,
-          orderedUnits: Number(i.quantity) || 1,
-          price: Math.round(Number(i.price) || 0),
-        };
-      }),
+      items: orderForm.items.map((i) => ({
+        skuId: Number(i.skuId || i.id),
+        orderedUnits: Number(i.quantity) || 1,
+        price: Math.round(Number(i.price) || 0),
+      })),
     };
 
     try {
@@ -2005,20 +2247,20 @@ function OrderRequest() {
                       options={availableSkusToAdd}
                       value={skuToAdd}
                       onChange={(e) => setSkuToAdd(e.target.value)}
-                      onSelect={(sku) => setSkuToAdd(sku ? sku.sku : "")}
-                      placeholder="Search medicine from catalog..."
-                      emptyText="No matching medicines in catalog"
-                      getOptionValue={(s) => s.sku}
+                      onSelect={(g) =>
+                        setSkuToAdd(g ? String(g.settingId ?? g.id) : "")
+                      }
+                      placeholder="Search generic medicine needing restock..."
+                      emptyText="No matching generic medicines needing restock"
+                      getOptionValue={(s) => String(s.settingId ?? s.id)}
                       getOptionLabel={(s) =>
-                        s.brandName
-                          ? `${s.brandName} (${s.genericName || s.sku})`
-                          : s.sku
+                        `${s.genericName || s.name}${s.packagingUnit ? ` — ${s.packagingUnit}` : ""}`
                       }
                       getOptionSubtext={(s) =>
-                        `SKU: ${s.sku} • Stock: ${s.currentStock ?? 0} (Reorder: ${s.reorderLevel ?? 0})${s.dosage ? ` • ${s.dosage}` : ""}`
+                        `Pooled Stock: ${s.currentStock ?? 0} (Reorder: ${s.reorderLevel ?? 0})${s.dosage ? ` • ${s.dosage}` : ""}`
                       }
                       getDisplayValue={(s) =>
-                        s.brandName ? `${s.brandName} (${s.sku})` : s.sku
+                        `${s.genericName || s.name}${s.packagingUnit ? ` (${s.packagingUnit})` : ""}`
                       }
                       inputClassName="!py-1.5 !text-xs !px-3"
                       className="w-full text-xs"
@@ -2053,16 +2295,19 @@ function OrderRequest() {
                 <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
                   <tr>
                     <th className="px-3.5 py-2.5 bg-gray-100">
-                      Medication & SKU
+                      Generic Medicine
                     </th>
-                    <th className="px-3.5 py-2.5 bg-gray-100">Current / Max</th>
+                    <th className="px-3.5 py-2.5 min-w-56 bg-gray-100">
+                      Brand SKU to Order *
+                    </th>
+                    <th className="px-3.5 py-2.5 bg-gray-100">Pooled / Max</th>
+                    <th className="px-3.5 py-2.5 w-24 bg-gray-100">
+                      Order Qty *
+                    </th>
                     <th className="px-3.5 py-2.5 w-28 bg-gray-100">
-                      Order Quantity
+                      Total Price (₱) *
                     </th>
-                    <th className="px-3.5 py-2.5 w-32 bg-gray-100">
-                      Total Price (₱)
-                    </th>
-                    <th className="px-3.5 py-2.5 w-28 text-right bg-gray-100">
+                    <th className="px-3.5 py-2.5 w-24 text-right bg-gray-100">
                       Price / Unit
                     </th>
                     <th className="px-3.5 py-2.5 w-10 text-center bg-gray-100">
@@ -2073,7 +2318,7 @@ function OrderRequest() {
                 <tbody className="divide-y divide-gray-100 bg-white">
                   {orderForm.items.length > 0 ? (
                     orderForm.items.map((item, idx) => {
-                      const rowKey = item.rowId || `${item.sku}-${idx}`;
+                      const rowKey = item.rowId || `${item.genericStockSettingId}-${idx}`;
                       const qty = Number(item.quantity) || 0;
                       const hasPrice =
                         item.price !== "" &&
@@ -2083,24 +2328,58 @@ function OrderRequest() {
                       const priceVal = hasPrice ? Number(item.price) : null;
                       const unitPrice =
                         priceVal !== null && qty > 0 ? priceVal / qty : null;
+                      const brandOptions =
+                        brandsBySettingId[item.genericStockSettingId] || [];
 
                       return (
                         <tr key={rowKey} className="hover:bg-gray-50/80">
+                          {/* Generic Medicine Info */}
                           <td className="px-3.5 py-2.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-gray-900">
-                                {item.brandName}
-                              </span>
-                              <span className="font-mono text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                                {item.sku}
-                              </span>
-                              <span className="font-mono text-[10px] text-gray-600 bg-gray-100 border border-gray-200 px-1.5 py-0.2 rounded font-medium">
-                                Threshold Alert
-                              </span>
+                            <div className="font-bold text-gray-900">
+                              {item.genericName}
                             </div>
                             <div className="text-[11px] text-gray-500">
-                              {item.genericName} • {item.dosage} (
-                              {item.packagingUnit})
+                              {item.dosage && `${item.dosage} • `}
+                              {item.packagingUnit || "—"}
+                            </div>
+                          </td>
+
+                          {/* Brand SKU Selector + Inline Create Button */}
+                          <td className="px-3.5 py-2.5">
+                            <div className="flex items-center gap-1.5">
+                              <select
+                                value={item.skuId || ""}
+                                onChange={(e) =>
+                                  handleSelectBrandInOrder(
+                                    rowKey,
+                                    e.target.value,
+                                  )
+                                }
+                                required
+                                className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-xs font-semibold text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                              >
+                                <option value="">-- Choose Brand SKU --</option>
+                                {brandOptions.map((b) => (
+                                  <option key={b.id} value={String(b.id)}>
+                                    {b.brandName} ({b.name}) —{" "}
+                                    {Number(b.units || 0).toLocaleString()} u
+                                  </option>
+                                ))}
+                              </select>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  handleOpenInlineBrandModal(
+                                    { ...item, lineKey: rowKey },
+                                    "order",
+                                  )
+                                }
+                                className="px-2 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold shrink-0 inline-flex items-center gap-0.5 cursor-pointer"
+                                title="Brand not listed? Create a new Brand SKU for this generic medicine"
+                              >
+                                <Plus className="w-3 h-3" />
+                                <span>New</span>
+                              </button>
                             </div>
                           </td>
 
@@ -2123,28 +2402,23 @@ function OrderRequest() {
                           </td>
 
                           <td className="px-3.5 py-2.5">
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                min="1"
-                                value={item.quantity}
-                                onChange={(e) =>
-                                  handleUpdateItemQuantity(
-                                    rowKey,
-                                    e.target.value,
-                                  )
-                                }
-                                className="input py-1 px-2 text-xs w-20 font-bold text-gray-900"
-                              />
-                              <span className="text-[10px] text-gray-500">
-                                units
-                              </span>
-                            </div>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={(e) =>
+                                handleUpdateItemQuantity(
+                                  rowKey,
+                                  e.target.value,
+                                )
+                              }
+                              className="input py-1 px-2 text-xs w-20 font-bold text-gray-900"
+                            />
                           </td>
 
                           <td className="px-3.5 py-2.5">
                             <div className="relative flex items-center">
-                              <span className="absolute left-2.5 text-gray-400 text-xs font-bold">
+                              <span className="absolute left-2 text-gray-400 text-xs font-bold">
                                 ₱
                               </span>
                               <input
@@ -2156,7 +2430,7 @@ function OrderRequest() {
                                 onChange={(e) =>
                                   handleUpdateItemPrice(rowKey, e.target.value)
                                 }
-                                className="input py-1 pl-6 pr-2 text-xs w-28 font-mono font-bold text-gray-900"
+                                className="input py-1 pl-5 pr-2 text-xs w-24 font-mono font-bold text-gray-900"
                               />
                             </div>
                           </td>
@@ -2198,7 +2472,7 @@ function OrderRequest() {
                   ) : (
                     <tr>
                       <td
-                        colSpan="6"
+                        colSpan="7"
                         className="px-4 py-8 text-center text-gray-400"
                       >
                         <Layers className="w-6 h-6 mx-auto mb-1 text-gray-300" />
@@ -2207,7 +2481,7 @@ function OrderRequest() {
                         </p>
                         <p className="text-[11px]">
                           Search and choose from the combobox above to add
-                          medicines to this PO.
+                          generic medicines to this PO.
                         </p>
                       </td>
                     </tr>
@@ -2602,10 +2876,13 @@ function OrderRequest() {
                     }))
                   }
                   size="sm"
-                  options={activeSuppliers.map((s) => ({
-                    value: s.id,
-                    label: s.name,
-                  }))}
+                  options={[
+                    { value: "", label: "-- Select Target Supplier --" },
+                    ...activeSuppliers.map((s) => ({
+                      value: String(s.id),
+                      label: s.name,
+                    })),
+                  ]}
                 />
               </div>
 
@@ -2675,11 +2952,12 @@ function OrderRequest() {
                 <table className="w-full text-left text-xs text-gray-600">
                   <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
                     <tr>
-                      <th className="px-3.5 py-2.5">Medication & SKU</th>
-                      <th className="px-3.5 py-2.5 w-24">Current Stock</th>
-                      <th className="px-3.5 py-2.5 w-28">Order Units *</th>
-                      <th className="px-3.5 py-2.5 w-32">Total Price (₱) *</th>
-                      <th className="px-3.5 py-2.5 w-28 text-right">
+                      <th className="px-3.5 py-2.5">Generic Medicine</th>
+                      <th className="px-3.5 py-2.5 min-w-56">Brand SKU to Order *</th>
+                      <th className="px-3.5 py-2.5 w-20">Pooled</th>
+                      <th className="px-3.5 py-2.5 w-24">Units *</th>
+                      <th className="px-3.5 py-2.5 w-28">Total Price (₱) *</th>
+                      <th className="px-3.5 py-2.5 w-24 text-right">
                         Price / Unit
                       </th>
                       <th className="px-3.5 py-2.5 w-10 text-center">Action</th>
@@ -2695,31 +2973,66 @@ function OrderRequest() {
                             : null;
                         const unitPrice =
                           priceVal !== null && qty > 0 ? priceVal / qty : null;
+                        const brandOptions =
+                          brandsBySettingId[item.genericStockSettingId] || [];
 
                         return (
-                          <tr key={item.skuId} className="hover:bg-gray-50/80">
-                            {/* Medication info */}
+                          <tr key={item.lineKey} className="hover:bg-gray-50/80">
+                            {/* Generic Medicine Info */}
                             <td className="px-3.5 py-2.5">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-gray-900">
-                                  {item.brandName || item.skuCode}
-                                </span>
-                                <span className="font-mono text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-semibold">
-                                  {item.skuCode}
-                                </span>
+                              <div className="font-bold text-gray-900">
+                                {item.genericName}
                               </div>
                               <div className="text-[11px] text-gray-500">
-                                {item.genericName}{" "}
-                                {item.dosage && `• ${item.dosage}`}
+                                {item.dosage && `${item.dosage} • `}
+                                {item.packagingUnit || "—"}
                               </div>
                             </td>
 
-                            {/* Current Stock */}
+                            {/* Brand SKU Selector + Inline Create Button */}
+                            <td className="px-3.5 py-2.5">
+                              <div className="flex items-center gap-1.5">
+                                <select
+                                  value={item.skuId || ""}
+                                  onChange={(e) =>
+                                    handleSelectBrandInConversion(
+                                      item.lineKey,
+                                      e.target.value,
+                                    )
+                                  }
+                                  required
+                                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-xs font-semibold text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="">
+                                    -- Choose Brand SKU --
+                                  </option>
+                                  {brandOptions.map((b) => (
+                                    <option key={b.id} value={String(b.id)}>
+                                      {b.brandName} ({b.name}) —{" "}
+                                      {Number(b.units || 0).toLocaleString()} u
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleOpenInlineBrandModal(item)
+                                  }
+                                  className="px-2 py-1.5 rounded-md border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 text-[11px] font-bold shrink-0 inline-flex items-center gap-0.5 cursor-pointer"
+                                  title="Brand not listed? Create a new Brand SKU for this generic medicine"
+                                >
+                                  <Plus className="w-3 h-3" />
+                                  <span>New</span>
+                                </button>
+                              </div>
+                            </td>
+
+                            {/* Pooled Stock */}
                             <td className="px-3.5 py-2.5 font-mono text-gray-700">
                               {item.currentStock ?? "—"}
                             </td>
 
-                            {/* Order Units (Editable) */}
+                            {/* Order Units */}
                             <td className="px-3.5 py-2.5">
                               <input
                                 type="number"
@@ -2727,16 +3040,16 @@ function OrderRequest() {
                                 value={item.orderedUnits}
                                 onChange={(e) =>
                                   handleUpdateItemQtyInConversion(
-                                    item.skuId,
+                                    item.lineKey,
                                     e.target.value,
                                   )
                                 }
                                 required
-                                className="w-24 px-2 py-1 border border-gray-300 rounded font-bold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                                className="w-20 px-2 py-1 border border-gray-300 rounded font-bold text-blue-700 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
                               />
                             </td>
 
-                            {/* Total Price (Editable - Required for Procurement) */}
+                            {/* Total Price */}
                             <td className="px-3.5 py-2.5">
                               <input
                                 type="number"
@@ -2746,12 +3059,12 @@ function OrderRequest() {
                                 value={item.price}
                                 onChange={(e) =>
                                   handleUpdateItemPriceInConversion(
-                                    item.skuId,
+                                    item.lineKey,
                                     e.target.value,
                                   )
                                 }
                                 required
-                                className="w-28 px-2 py-1 border border-gray-300 rounded font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
+                                className="w-24 px-2 py-1 border border-gray-300 rounded font-semibold text-gray-800 focus:outline-none focus:ring-1 focus:ring-blue-500 text-xs"
                               />
                             </td>
 
@@ -2765,15 +3078,15 @@ function OrderRequest() {
                                 : "—"}
                             </td>
 
-                            {/* Remove SKU Button */}
+                            {/* Remove Line Button */}
                             <td className="px-3.5 py-2.5 text-center">
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleRemoveItemFromConversion(item.skuId)
+                                  handleRemoveItemFromConversion(item.lineKey)
                                 }
                                 className="text-gray-400 hover:text-red-600 transition-colors cursor-pointer p-1"
-                                title="Remove this SKU from the purchase order"
+                                title="Remove this item from the purchase order"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
@@ -2784,10 +3097,10 @@ function OrderRequest() {
                     ) : (
                       <tr>
                         <td
-                          colSpan="6"
+                          colSpan="7"
                           className="px-4 py-8 text-center text-gray-400"
                         >
-                          All SKUs have been removed. At least one SKU is
+                          All items have been removed. At least one item is
                           required to convert to a purchase order.
                         </td>
                       </tr>
@@ -3183,6 +3496,91 @@ function OrderRequest() {
               </div>
             </div>
           </div>
+        )}
+      </Modal>
+
+      {/* ======================================================== */}
+      {/* 7. MODAL: INLINE CREATE NEW BRAND SKU (PROCUREMENT)      */}
+      {/* ======================================================== */}
+      <Modal
+        isOpen={Boolean(inlineBrandTarget)}
+        onClose={() => setInlineBrandTarget(null)}
+        title="Create New Brand SKU"
+        size="md"
+      >
+        {inlineBrandTarget && (
+          <form onSubmit={handleCreateInlineBrandSku} className="space-y-4 text-xs">
+            <div className="p-3.5 rounded-xl bg-blue-50/70 border border-blue-100 space-y-1">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-blue-700">
+                Generic Medicine Pool
+              </div>
+              <div className="font-bold text-sm text-gray-900">
+                {inlineBrandTarget.genericName}
+              </div>
+              <div className="text-xs text-gray-600">
+                {inlineBrandTarget.dosageStrength && `${inlineBrandTarget.dosageStrength} • `}
+                {inlineBrandTarget.dosageForm && `${inlineBrandTarget.dosageForm} • `}
+                {inlineBrandTarget.packagingUnit}
+              </div>
+            </div>
+
+            {inlineBrandError && (
+              <div className="p-2.5 rounded-lg bg-red-50 border border-red-200 text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{inlineBrandError}</span>
+              </div>
+            )}
+
+            <div>
+              <label
+                htmlFor="inline-brand-name"
+                className="block text-[11px] font-bold text-gray-700 uppercase tracking-wider mb-1.5"
+              >
+                New Brand Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="inline-brand-name"
+                type="text"
+                required
+                autoFocus
+                value={inlineBrandName}
+                onChange={(e) => setInlineBrandName(e.target.value.toUpperCase())}
+                placeholder="e.g. BIOGESIC, TEMPRA, GENERIC"
+                className="input uppercase"
+              />
+              <p className="text-[11px] text-gray-400 mt-1">
+                SKU code will be auto-generated and linked to this generic pool&apos;s shared thresholds.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={() => setInlineBrandTarget(null)}
+                className="btn-secondary text-xs"
+                disabled={isCreatingInlineBrand}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isCreatingInlineBrand || !inlineBrandName.trim()}
+                className="btn-primary text-xs flex items-center gap-1.5"
+              >
+                {isCreatingInlineBrand ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Creating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Create &amp; Select Brand SKU</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </form>
         )}
       </Modal>
     </div>

@@ -1,4 +1,11 @@
-import { useState, useMemo, useEffect, useCallback, useRef } from "react";
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+  Fragment,
+} from "react";
 import { Link } from "react-router-dom";
 import {
   Boxes,
@@ -23,6 +30,9 @@ import {
   Phone,
   UserPlus,
   FileText,
+  ChevronDown,
+  ChevronRight,
+  Layers,
 } from "lucide-react";
 
 // Common Components
@@ -39,6 +49,7 @@ import Skeleton from "../../components/common/skeleton";
 // Services
 import libMedicineService from "../../services/libMedicine";
 import skuService from "../../services/sku";
+import genericStockSettingService from "../../services/genericStockSetting";
 import batchService from "../../services/batch";
 import libPackagingUnitService from "../../services/libPackagingUnit";
 import patientService from "../../services/patient";
@@ -68,10 +79,15 @@ const extractDosageFromDescription = (description) => {
   const comboMatch = description.match(comboPattern);
   if (comboMatch) return comboMatch[0].trim();
 
-  const allMatches = description.match(new RegExp(singleDosePattern.source, "gi"));
+  const allMatches = description.match(
+    new RegExp(singleDosePattern.source, "gi"),
+  );
   if (allMatches && allMatches.length > 0) {
     const nonPack = allMatches.filter((m) => {
-      const rx = new RegExp(`${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:bottle|tube|vial|ampoule|pack|box|bag|canister)`, "i");
+      const rx = new RegExp(
+        `${m.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:bottle|tube|vial|ampoule|pack|box|bag|canister)`,
+        "i",
+      );
       return !rx.test(description);
     });
     return nonPack.length > 0 ? nonPack[0].trim() : allMatches[0].trim();
@@ -129,21 +145,42 @@ const detectPackagingCodeFromDesc = (description) => {
   const desc = description.toUpperCase();
 
   // 1. Syringes
-  if (desc.includes("0.5 ML PRE-FILLED SYRINGE") || desc.includes("0.5ML PRE-FILLED SYRINGE")) return "PS05";
-  if (desc.includes("1 ML PRE-FILLED SYRINGE") || desc.includes("1ML PRE-FILLED SYRINGE")) return "PS10";
+  if (
+    desc.includes("0.5 ML PRE-FILLED SYRINGE") ||
+    desc.includes("0.5ML PRE-FILLED SYRINGE")
+  )
+    return "PS05";
+  if (
+    desc.includes("1 ML PRE-FILLED SYRINGE") ||
+    desc.includes("1ML PRE-FILLED SYRINGE")
+  )
+    return "PS10";
   if (desc.includes("PRE-FILLED SYRINGE")) return "PS01";
   if (desc.includes("SYRINGE")) return "SY01";
 
   // 2. Eye / Ear Drops
-  if (desc.includes("2.5 ML") && (desc.includes("DROPS") || desc.includes("OPHTHALMIC"))) return "DR02";
-  if (desc.includes("5 ML") && (desc.includes("DROPS") || desc.includes("OPHTHALMIC"))) return "DR05";
-  if (desc.includes("10 ML DROPS") || desc.includes("DROPS 10 ML")) return "DR10";
-  if (desc.includes("15 ML DROPS") || desc.includes("DROPS 15 ML")) return "DR15";
-  if (desc.includes("30 ML DROPS") || desc.includes("DROPS 30 ML")) return "DR30";
+  if (
+    desc.includes("2.5 ML") &&
+    (desc.includes("DROPS") || desc.includes("OPHTHALMIC"))
+  )
+    return "DR02";
+  if (
+    desc.includes("5 ML") &&
+    (desc.includes("DROPS") || desc.includes("OPHTHALMIC"))
+  )
+    return "DR05";
+  if (desc.includes("10 ML DROPS") || desc.includes("DROPS 10 ML"))
+    return "DR10";
+  if (desc.includes("15 ML DROPS") || desc.includes("DROPS 15 ML"))
+    return "DR15";
+  if (desc.includes("30 ML DROPS") || desc.includes("DROPS 30 ML"))
+    return "DR30";
 
   // 3. Vials (check specific sizes first)
-  if (desc.includes("200 ML VIAL") || desc.includes("200ML VIAL")) return "VL200";
-  if (desc.includes("100 ML VIAL") || desc.includes("100ML VIAL")) return "VL100";
+  if (desc.includes("200 ML VIAL") || desc.includes("200ML VIAL"))
+    return "VL200";
+  if (desc.includes("100 ML VIAL") || desc.includes("100ML VIAL"))
+    return "VL100";
   if (desc.includes("50 ML VIAL") || desc.includes("50ML VIAL")) return "VL50";
   if (desc.includes("30 ML VIAL") || desc.includes("30ML VIAL")) return "VL30";
   if (desc.includes("25 ML VIAL") || desc.includes("25ML VIAL")) return "VL25";
@@ -157,30 +194,65 @@ const detectPackagingCodeFromDesc = (description) => {
   if (desc.includes("1 ML VIAL") || desc.includes("1ML VIAL")) return "VL01";
 
   // 4. Ampoules
-  if (desc.includes("10 ML AMPULE") || desc.includes("10 ML AMP") || desc.includes("10ML AMP")) return "AM10";
-  if (desc.includes("5 ML AMPULE") || desc.includes("5 ML AMP") || desc.includes("5ML AMP")) return "AM05";
-  if (desc.includes("2 ML AMPULE") || desc.includes("2 ML AMP") || desc.includes("2ML AMP")) return "AM02";
-  if (desc.includes("1 ML AMPULE") || desc.includes("1 ML AMP") || desc.includes("1ML AMP")) return "AM01";
+  if (
+    desc.includes("10 ML AMPULE") ||
+    desc.includes("10 ML AMP") ||
+    desc.includes("10ML AMP")
+  )
+    return "AM10";
+  if (
+    desc.includes("5 ML AMPULE") ||
+    desc.includes("5 ML AMP") ||
+    desc.includes("5ML AMP")
+  )
+    return "AM05";
+  if (
+    desc.includes("2 ML AMPULE") ||
+    desc.includes("2 ML AMP") ||
+    desc.includes("2ML AMP")
+  )
+    return "AM02";
+  if (
+    desc.includes("1 ML AMPULE") ||
+    desc.includes("1 ML AMP") ||
+    desc.includes("1ML AMP")
+  )
+    return "AM01";
 
   // 5. Bottles & Oral Liquids
   if (desc.includes("GALLON") || desc.includes("GL")) return "GL01";
   if (desc.includes("5 L BOTTLE") || desc.includes("5L BOTTLE")) return "BL5L";
   if (desc.includes("1 L BOTTLE") || desc.includes("1L BOTTLE")) return "BL1L";
-  if (desc.includes("500 ML BOTTLE") || desc.includes("500ML BOTTLE")) return "BL500";
-  if (desc.includes("250 ML BOTTLE") || desc.includes("250ML BOTTLE")) return "BL250";
-  if (desc.includes("240 ML BOTTLE") || desc.includes("240ML BOTTLE")) return "BL240";
-  if (desc.includes("200 ML BOTTLE") || desc.includes("200ML BOTTLE")) return "BL200";
-  if (desc.includes("150 ML BOTTLE") || desc.includes("150ML BOTTLE")) return "BL150";
-  if (desc.includes("120 ML BOTTLE") || desc.includes("120ML BOTTLE")) return "BL120";
-  if (desc.includes("100 ML BOTTLE") || desc.includes("100ML BOTTLE")) return "BL100";
-  if (desc.includes("70 ML BOTTLE") || desc.includes("70ML BOTTLE")) return "BL70";
-  if (desc.includes("60 ML BOTTLE") || desc.includes("60ML BOTTLE")) return "BL60";
-  if (desc.includes("50 ML BOTTLE") || desc.includes("50ML BOTTLE")) return "BL50";
-  if (desc.includes("30 ML BOTTLE") || desc.includes("30ML BOTTLE")) return "BL30";
-  if (desc.includes("25 ML BOTTLE") || desc.includes("25ML BOTTLE")) return "BL25";
-  if (desc.includes("15 ML BOTTLE") || desc.includes("15ML BOTTLE")) return "BL15";
-  if (desc.includes("10 ML BOTTLE") || desc.includes("10ML BOTTLE")) return "BL10";
-  if (desc.includes("5 ML BOTTLE") || desc.includes("5ML BOTTLE")) return "BL05";
+  if (desc.includes("500 ML BOTTLE") || desc.includes("500ML BOTTLE"))
+    return "BL500";
+  if (desc.includes("250 ML BOTTLE") || desc.includes("250ML BOTTLE"))
+    return "BL250";
+  if (desc.includes("240 ML BOTTLE") || desc.includes("240ML BOTTLE"))
+    return "BL240";
+  if (desc.includes("200 ML BOTTLE") || desc.includes("200ML BOTTLE"))
+    return "BL200";
+  if (desc.includes("150 ML BOTTLE") || desc.includes("150ML BOTTLE"))
+    return "BL150";
+  if (desc.includes("120 ML BOTTLE") || desc.includes("120ML BOTTLE"))
+    return "BL120";
+  if (desc.includes("100 ML BOTTLE") || desc.includes("100ML BOTTLE"))
+    return "BL100";
+  if (desc.includes("70 ML BOTTLE") || desc.includes("70ML BOTTLE"))
+    return "BL70";
+  if (desc.includes("60 ML BOTTLE") || desc.includes("60ML BOTTLE"))
+    return "BL60";
+  if (desc.includes("50 ML BOTTLE") || desc.includes("50ML BOTTLE"))
+    return "BL50";
+  if (desc.includes("30 ML BOTTLE") || desc.includes("30ML BOTTLE"))
+    return "BL30";
+  if (desc.includes("25 ML BOTTLE") || desc.includes("25ML BOTTLE"))
+    return "BL25";
+  if (desc.includes("15 ML BOTTLE") || desc.includes("15ML BOTTLE"))
+    return "BL15";
+  if (desc.includes("10 ML BOTTLE") || desc.includes("10ML BOTTLE"))
+    return "BL10";
+  if (desc.includes("5 ML BOTTLE") || desc.includes("5ML BOTTLE"))
+    return "BL05";
 
   // 6. IV Bags
   if (desc.includes("1 L BAG") || desc.includes("1L BAG")) return "BG1L";
@@ -208,8 +280,10 @@ const detectPackagingCodeFromDesc = (description) => {
   // 8. Nebules, Sachets & Others
   if (desc.includes("2.5 ML NEBULE") || desc.includes("NEBULE")) return "NB01";
   if (desc.includes("2 ML NEBULE")) return "NB02";
-  if (desc.includes("10 ML SACHET") || desc.includes("10ML SACHET")) return "SC10";
-  if (desc.includes("6 ML SACHET") || desc.includes("6ML SACHET")) return "SC06";
+  if (desc.includes("10 ML SACHET") || desc.includes("10ML SACHET"))
+    return "SC10";
+  if (desc.includes("6 ML SACHET") || desc.includes("6ML SACHET"))
+    return "SC06";
   if (desc.includes("SACHET")) return "SC01";
   if (desc.includes("CARTRIDGE")) return "CR01";
   if (desc.includes("CARPULE")) return "CP01";
@@ -229,22 +303,34 @@ const detectPackagingCodeFromDesc = (description) => {
   return "BX100";
 };
 
-const generateSkuPreview = (brand, generic, dosage, form, packagingUnitCode) => {
+const generateSkuPreview = (
+  brand,
+  generic,
+  dosage,
+  form,
+  packagingUnitCode,
+) => {
   const cleanBrand = (brand || "").replace(/[^a-zA-Z0-9]/g, "").toUpperCase();
-  const brandCode = cleanBrand.length >= 4
-    ? cleanBrand.slice(0, 4)
-    : (cleanBrand ? cleanBrand.padEnd(4, "X") : "GENE");
+  const brandCode =
+    cleanBrand.length >= 4
+      ? cleanBrand.slice(0, 4)
+      : cleanBrand
+        ? cleanBrand.padEnd(4, "X")
+        : "GENE";
 
   // 5-letter generic code
   let genericPart = "MEDIC";
   if (generic) {
     let cleaned = generic.replace(/^\s*\d+(?:\.\d+)?%?\s*/, "").trim();
     if (cleaned.includes("+")) {
-      const parts = cleaned.split("+").map((p) => {
-        const words = p.trim().split(/\s+/);
-        const w = words[0].replace(/[^a-zA-Z]/g, "").toUpperCase();
-        return w.length >= 5 ? w.slice(0, 5) : w;
-      }).filter(Boolean);
+      const parts = cleaned
+        .split("+")
+        .map((p) => {
+          const words = p.trim().split(/\s+/);
+          const w = words[0].replace(/[^a-zA-Z]/g, "").toUpperCase();
+          return w.length >= 5 ? w.slice(0, 5) : w;
+        })
+        .filter(Boolean);
       if (parts.length > 0) genericPart = parts.join("+");
     } else {
       const words = cleaned.split(/\s+/);
@@ -302,7 +388,8 @@ const generateSkuPreview = (brand, generic, dosage, form, packagingUnitCode) => 
     else if (fUpper.includes("GEL")) formCode = "GEL";
     else {
       const cleanF = fUpper.replace(/[^A-Z]/g, "");
-      formCode = cleanF.length >= 3 ? cleanF.slice(0, 3) : cleanF.padEnd(3, "X");
+      formCode =
+        cleanF.length >= 3 ? cleanF.slice(0, 3) : cleanF.padEnd(3, "X");
     }
   }
 
@@ -314,17 +401,25 @@ const generateSkuPreview = (brand, generic, dosage, form, packagingUnitCode) => 
 const mapDtoToSku = (dto) => {
   return {
     id: dto.id,
+    genericStockSettingId: dto.genericStockSettingId,
     sku: dto.name || "",
     name: dto.name || "",
     medicineId: dto.medicineId,
     brandName: dto.brandName || "",
     genericName: dto.drugDescription || "",
-    dosage: dto.dosageStrength || extractDosageFromDescription(dto.drugDescription) || "",
-    dosageStrength: dto.dosageStrength || extractDosageFromDescription(dto.drugDescription) || "",
+    dosage:
+      dto.dosageStrength ||
+      extractDosageFromDescription(dto.drugDescription) ||
+      "",
+    dosageStrength:
+      dto.dosageStrength ||
+      extractDosageFromDescription(dto.drugDescription) ||
+      "",
     dosageForm: dto.dosageForm || "",
     packagingUnit: dto.packagingUnit || "",
     currentStock: Number(dto.units ?? 0),
     units: Number(dto.units ?? 0),
+    groupTotalUnits: Number(dto.groupTotalUnits ?? dto.units ?? 0),
     minimumLevel: Number(dto.minimumLevel ?? 0),
     reorderLevel: Number(dto.reorderLevel ?? 0),
     maximumLevel: Number(dto.maximumLevel ?? 0),
@@ -356,7 +451,17 @@ function SkuManagement() {
     return pharmacy?.id || null;
   }, [pharmacy]);
 
-  const [skuList, setSkuList] = useState([]);
+  const [groupedList, setGroupedList] = useState([]);
+  const [allGenericGroups, setAllGenericGroups] = useState([]);
+  const [expandedGroups, setExpandedGroups] = useState(() => new Set());
+  const [editingGroup, setEditingGroup] = useState(null);
+  const [groupThresholdForm, setGroupThresholdForm] = useState({
+    minimumLevel: "",
+    reorderLevel: "",
+    maximumLevel: "",
+  });
+  const [groupThresholdError, setGroupThresholdError] = useState(null);
+  const [isSavingGroupThreshold, setIsSavingGroupThreshold] = useState(false);
   const [isLoadingSkus, setIsLoadingSkus] = useState(true);
   const [skuError, setSkuError] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -432,7 +537,8 @@ function SkuManagement() {
     }
     try {
       setIsLoadingSummary(true);
-      const summary = await skuService.getSkuSummary(targetPharmacyId);
+      const summary =
+        await genericStockSettingService.getSummary(targetPharmacyId);
       if (summary) {
         setSummaryData({
           totalSkus: Number(summary.totalSkus || 0),
@@ -448,54 +554,192 @@ function SkuManagement() {
     }
   }, [targetPharmacyId]);
 
-  // Fetch paginated SKUs from backend API
+  // Fetch paginated grouped SKUs (Generic + Packaging -> Brand SKUs)
   const fetchSkus = useCallback(
-    async (pageToFetch = 1, query = "", stockFilter = "ALL", statusFilter = "ALL") => {
+    async (
+      pageToFetch = 1,
+      query = "",
+      stockFilter = "ALL",
+      statusFilter = "ALL",
+    ) => {
       try {
         setIsLoadingSkus(true);
         setSkuError(null);
 
         if (!targetPharmacyId) {
-          setSkuList([]);
+          setGroupedList([]);
           setTotalPages(1);
           setTotalElements(0);
           return;
         }
 
-        const data = await skuService.getSkusPaginated({
+        const data = await genericStockSettingService.getGroupedSkus({
           pharmacyId: targetPharmacyId,
           search: query ? query.trim() : "",
           status: statusFilter || "ALL",
           stockStatus: stockFilter || "ALL",
           page: Math.max(0, pageToFetch - 1),
           size: itemsPerPage,
-          sortBy: "genericName",
-          sortDir: "ASC",
         });
 
         if (data && Array.isArray(data.content)) {
-          setSkuList(data.content.map(mapDtoToSku));
+          const normalizedGroups = data.content.map((group) => ({
+            ...group,
+            totalUnits: Number(group.totalUnits ?? 0),
+            minimumLevel: Number(group.minimumLevel ?? 0),
+            reorderLevel: Number(group.reorderLevel ?? 0),
+            maximumLevel: Number(group.maximumLevel ?? 0),
+            pendingUnits: Number(group.pendingUnits ?? 0),
+            toReceiveUnits: Number(group.toReceiveUnits ?? 0),
+            expiredBatchesCount: Number(group.expiredBatchesCount ?? 0),
+            expiredUnits: Number(group.expiredUnits ?? 0),
+            brandCount: Number(group.brandCount ?? 0),
+            activeBrandCount: Number(group.activeBrandCount ?? 0),
+            brands: Array.isArray(group.brands)
+              ? group.brands.map(mapDtoToSku)
+              : [],
+          }));
+          setGroupedList(normalizedGroups);
           setTotalPages(data.totalPages || 1);
           setTotalElements(data.totalElements || 0);
+
+          if (query && query.trim()) {
+            setExpandedGroups(
+              new Set(normalizedGroups.map((g) => g.settingId)),
+            );
+          }
         } else {
-          setSkuList([]);
+          setGroupedList([]);
           setTotalPages(1);
           setTotalElements(0);
         }
       } catch (err) {
-        console.error("Failed to load SKUs from backend:", err);
+        console.error("Failed to load grouped SKUs from backend:", err);
         setSkuError(
           err?.response?.data?.message ||
             err?.message ||
             "Failed to load SKUs from server.",
         );
-        setSkuList([]);
+        setGroupedList([]);
       } finally {
         setIsLoadingSkus(false);
       }
     },
     [targetPharmacyId, itemsPerPage],
   );
+
+  const toggleGroupExpand = (settingId) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(settingId)) {
+        next.delete(settingId);
+      } else {
+        next.add(settingId);
+      }
+      return next;
+    });
+  };
+
+  const handleOpenGroupThresholdModal = (group) => {
+    setEditingGroup(group);
+    setGroupThresholdForm({
+      minimumLevel: group.minimumLevel ?? "",
+      reorderLevel: group.reorderLevel ?? "",
+      maximumLevel: group.maximumLevel ?? "",
+    });
+    setGroupThresholdError(null);
+  };
+
+  const handleCloseGroupThresholdModal = () => {
+    setEditingGroup(null);
+    setGroupThresholdError(null);
+  };
+
+  const handleSaveGroupThresholds = async (e) => {
+    e.preventDefault();
+    if (!editingGroup) return;
+
+    const min = Number(groupThresholdForm.minimumLevel);
+    const reorder = Number(groupThresholdForm.reorderLevel);
+    const max = Number(groupThresholdForm.maximumLevel);
+
+    if (
+      groupThresholdForm.minimumLevel === "" ||
+      groupThresholdForm.reorderLevel === "" ||
+      groupThresholdForm.maximumLevel === "" ||
+      Number.isNaN(min) ||
+      Number.isNaN(reorder) ||
+      Number.isNaN(max)
+    ) {
+      setGroupThresholdError("All threshold levels are required.");
+      return;
+    }
+    if (min < 0) {
+      setGroupThresholdError("Minimum level cannot be negative.");
+      return;
+    }
+    if (reorder <= min) {
+      setGroupThresholdError(
+        "Reorder level must be greater than minimum level.",
+      );
+      return;
+    }
+    if (max <= reorder) {
+      setGroupThresholdError(
+        "Maximum level must be greater than reorder level.",
+      );
+      return;
+    }
+
+    setIsSavingGroupThreshold(true);
+    setGroupThresholdError(null);
+    try {
+      await genericStockSettingService.updateThresholds(
+        editingGroup.settingId,
+        {
+          minimumLevel: min,
+          reorderLevel: reorder,
+          maximumLevel: max,
+        },
+      );
+      handleCloseGroupThresholdModal();
+      await fetchSkus(
+        currentPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
+      await fetchSummary();
+      await fetchAllGenericGroups();
+    } catch (err) {
+      console.error("Failed to update generic stock thresholds:", err);
+      setGroupThresholdError(
+        err?.response?.data?.message ||
+          err?.message ||
+          "Failed to update shared thresholds.",
+      );
+    } finally {
+      setIsSavingGroupThreshold(false);
+    }
+  };
+
+  const fetchAllGenericGroups = useCallback(async () => {
+    if (!targetPharmacyId) {
+      setAllGenericGroups([]);
+      return;
+    }
+    try {
+      const data =
+        await genericStockSettingService.getDropdown(targetPharmacyId);
+      setAllGenericGroups(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to load generic stock groups list:", err);
+    }
+  }, [targetPharmacyId]);
+
+  useEffect(() => {
+    fetchAllGenericGroups();
+  }, [fetchAllGenericGroups]);
 
   // Fetch summary when facility changes
   useEffect(() => {
@@ -505,11 +749,22 @@ function SkuManagement() {
   // Debounced fetch SKUs when page, query, stock filter, or status filter changes
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      fetchSkus(
+        currentPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [fetchSkus, currentPage, searchQuery, selectedStockFilter, selectedStatusFilter]);
+  }, [
+    fetchSkus,
+    currentPage,
+    searchQuery,
+    selectedStockFilter,
+    selectedStatusFilter,
+  ]);
 
   // Search Medicine Library from backend API
   const handleSearchMedicines = async (searchQuery = "") => {
@@ -620,7 +875,12 @@ function SkuManagement() {
       });
 
       // Refresh SKUs and summary from backend
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      await fetchSkus(
+        currentPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
       await fetchSummary();
     } catch (err) {
       console.error("Failed to process expired batches:", err);
@@ -681,6 +941,15 @@ function SkuManagement() {
       const matchedUnit = packagingUnits.find((u) => u.code === detectedCode);
       const packagingUnitName = matchedUnit ? matchedUnit.name : "Box of 100";
 
+      const existingGroup = (
+        allGenericGroups.length > 0 ? allGenericGroups : groupedList
+      ).find(
+        (g) =>
+          Number(g.medicineId) === Number(selectedMed.id) &&
+          (g.packagingUnit || "").toLowerCase() ===
+            packagingUnitName.toLowerCase(),
+      );
+
       setFormData((prev) => {
         const brandName = (prev.brandName || "").toUpperCase();
         const generatedSku = generateSkuPreview(
@@ -700,6 +969,13 @@ function SkuManagement() {
           packagingUnitCode: detectedCode,
           packagingUnit: packagingUnitName,
           sku: generatedSku,
+          ...(existingGroup
+            ? {
+                minimumLevel: existingGroup.minimumLevel,
+                reorderLevel: existingGroup.reorderLevel,
+                maximumLevel: existingGroup.maximumLevel,
+              }
+            : {}),
         };
       });
     } else {
@@ -716,6 +992,31 @@ function SkuManagement() {
     }
     clearError("medicineId");
   };
+
+  const matchedExistingGenericGroup = useMemo(() => {
+    if (
+      modalMode !== "add" ||
+      !formData.medicineId ||
+      !formData.packagingUnit
+    ) {
+      return null;
+    }
+    const pool = allGenericGroups.length > 0 ? allGenericGroups : groupedList;
+    return (
+      pool.find(
+        (g) =>
+          Number(g.medicineId) === Number(formData.medicineId) &&
+          (g.packagingUnit || "").toLowerCase() ===
+            (formData.packagingUnit || "").toLowerCase(),
+      ) || null
+    );
+  }, [
+    modalMode,
+    formData.medicineId,
+    formData.packagingUnit,
+    allGenericGroups,
+    groupedList,
+  ]);
 
   // Modal Open Handlers
   const handleOpenAddModal = () => {
@@ -768,7 +1069,12 @@ function SkuManagement() {
     setIsSubmitting(true);
     try {
       await skuService.reactivateSku(skuItem.id);
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      await fetchSkus(
+        currentPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
       await fetchSummary();
     } catch (err) {
       console.error("Failed to reactivate SKU:", err);
@@ -781,7 +1087,6 @@ function SkuManagement() {
       setIsSubmitting(false);
     }
   };
-
 
   const fetchPatients = useCallback(
     async (pId) => {
@@ -799,7 +1104,7 @@ function SkuManagement() {
         setIsLoadingPatients(false);
       }
     },
-    [pharmacy?.id, selectedSku?.pharmacyId, targetPharmacyId]
+    [pharmacy?.id, selectedSku?.pharmacyId, targetPharmacyId],
   );
 
   const handlePatientSelect = (patient) => {
@@ -864,7 +1169,7 @@ function SkuManagement() {
     return patients;
   }, [patients, isNewPatient, adjustFormData.patientName]);
 
-    // --- BATCH MANAGEMENT ACTION OPENERS ---
+  // --- BATCH MANAGEMENT ACTION OPENERS ---
 
   const handleOpenAdjustModal = async (skuItem) => {
     setSelectedSku(skuItem);
@@ -886,9 +1191,7 @@ function SkuManagement() {
       const available = (Array.isArray(data) ? data : [])
         .filter(
           (b) =>
-            b.status === "Available" &&
-            b.expiryDate &&
-            b.expiryDate > todayStr,
+            b.status === "Available" && b.expiryDate && b.expiryDate > todayStr,
         )
         .sort((a, b) => new Date(a.expiryDate) - new Date(b.expiryDate));
       setSkuBatches(available);
@@ -941,6 +1244,21 @@ function SkuManagement() {
         const unit = packagingUnits.find((u) => u.code === finalValue);
         if (unit) {
           updated.packagingUnit = unit.name;
+          if (modalMode === "add" && prev.medicineId) {
+            const existingGroup = (
+              allGenericGroups.length > 0 ? allGenericGroups : groupedList
+            ).find(
+              (g) =>
+                Number(g.medicineId) === Number(prev.medicineId) &&
+                (g.packagingUnit || "").toLowerCase() ===
+                  unit.name.toLowerCase(),
+            );
+            if (existingGroup) {
+              updated.minimumLevel = existingGroup.minimumLevel;
+              updated.reorderLevel = existingGroup.reorderLevel;
+              updated.maximumLevel = existingGroup.maximumLevel;
+            }
+          }
         }
       }
 
@@ -1001,9 +1319,7 @@ function SkuManagement() {
           dosageForm: formData.dosageForm
             ? formData.dosageForm.trim().toUpperCase()
             : undefined,
-          dosageStrength: formData.dosage
-            ? formData.dosage.trim()
-            : undefined,
+          dosageStrength: formData.dosage ? formData.dosage.trim() : undefined,
           units: 0,
           minimumLevel: Number(formData.minimumLevel),
           reorderLevel: Number(formData.reorderLevel),
@@ -1022,8 +1338,14 @@ function SkuManagement() {
         setCreatedSkuInfo(newSkuItem);
         setIsSuccessModalOpen(true);
         setCurrentPage(1);
-        await fetchSkus(1, searchQuery, selectedStockFilter, selectedStatusFilter);
+        await fetchSkus(
+          1,
+          searchQuery,
+          selectedStockFilter,
+          selectedStatusFilter,
+        );
         await fetchSummary();
+        await fetchAllGenericGroups();
         return;
       } else if (modalMode === "edit" && selectedSku) {
         const editPharmacyId = selectedSku.pharmacyId || targetPharmacyIdToSave;
@@ -1045,9 +1367,7 @@ function SkuManagement() {
           dosageForm: formData.dosageForm
             ? formData.dosageForm.trim().toUpperCase()
             : undefined,
-          dosageStrength: formData.dosage
-            ? formData.dosage.trim()
-            : undefined,
+          dosageStrength: formData.dosage ? formData.dosage.trim() : undefined,
           minimumLevel: Number(formData.minimumLevel),
           reorderLevel: Number(formData.reorderLevel),
           maximumLevel: Number(formData.maximumLevel),
@@ -1056,7 +1376,12 @@ function SkuManagement() {
 
         await skuService.updateSku(selectedSku.id, payload);
         handleCloseModal();
-        await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+        await fetchSkus(
+          currentPage,
+          searchQuery,
+          selectedStockFilter,
+          selectedStatusFilter,
+        );
         await fetchSummary();
       }
     } catch (err) {
@@ -1081,11 +1406,18 @@ function SkuManagement() {
       await skuService.deleteSku(selectedSku.id);
       handleCloseModal();
       const targetPage =
-        skuList.length === 1 && currentPage > 1 ? currentPage - 1 : currentPage;
+        groupedList.length === 1 && currentPage > 1
+          ? currentPage - 1
+          : currentPage;
       if (targetPage !== currentPage) {
         setCurrentPage(targetPage);
       }
-      await fetchSkus(targetPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      await fetchSkus(
+        targetPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
       await fetchSummary();
     } catch (err) {
       console.error("Failed to delete SKU from server:", err);
@@ -1123,7 +1455,9 @@ function SkuManagement() {
     }
 
     const isDispensed =
-      String(adjustFormData.reason || "").trim().toUpperCase() === "DISPENSED";
+      String(adjustFormData.reason || "")
+        .trim()
+        .toUpperCase() === "DISPENSED";
 
     if (
       adjustFormData.type === "ADD" &&
@@ -1138,8 +1472,7 @@ function SkuManagement() {
       skuBatches.length > 0 &&
       !adjustFormData.batchId
     ) {
-      errors.batchId =
-        "Please select which batch to deduct stock from.";
+      errors.batchId = "Please select which batch to deduct stock from.";
     }
 
     if (adjustFormData.type === "ADD" && adjustFormData.batchId) {
@@ -1169,10 +1502,15 @@ function SkuManagement() {
 
     if (isDispensed) {
       if (!adjustFormData.patientName || !adjustFormData.patientName.trim()) {
-        errors.patientName = "Patient name is required when dispensing medicine.";
+        errors.patientName =
+          "Patient name is required when dispensing medicine.";
       }
-      if (isNewPatient && (!adjustFormData.contactNumber || !adjustFormData.contactNumber.trim())) {
-        errors.contactNumber = "Patient phone number is required to create new patient.";
+      if (
+        isNewPatient &&
+        (!adjustFormData.contactNumber || !adjustFormData.contactNumber.trim())
+      ) {
+        errors.contactNumber =
+          "Patient phone number is required to create new patient.";
       }
     }
 
@@ -1198,7 +1536,10 @@ function SkuManagement() {
             });
             setPatients((prev) => [created, ...prev]);
           } catch (createErr) {
-            console.error("Failed to register new patient in background:", createErr);
+            console.error(
+              "Failed to register new patient in background:",
+              createErr,
+            );
           }
         }
       }
@@ -1207,8 +1548,12 @@ function SkuManagement() {
         amount: amt,
         reason: adjustFormData.reason,
         notes: adjustFormData.notes ? adjustFormData.notes.trim() : null,
-        patientName: isDispensed ? adjustFormData.patientName?.trim().toUpperCase() : null,
-        contactNumber: isDispensed ? adjustFormData.contactNumber?.trim() : null,
+        patientName: isDispensed
+          ? adjustFormData.patientName?.trim().toUpperCase()
+          : null,
+        contactNumber: isDispensed
+          ? adjustFormData.contactNumber?.trim()
+          : null,
         batchId:
           (adjustFormData.type === "ADD" ||
             (adjustFormData.type === "SUBTRACT" && !isDispensed)) &&
@@ -1219,7 +1564,9 @@ function SkuManagement() {
 
       const adjustedItem = selectedSku;
       const targetBatchObj = adjustFormData.batchId
-        ? skuBatches.find((b) => String(b.id) === String(adjustFormData.batchId))
+        ? skuBatches.find(
+            (b) => String(b.id) === String(adjustFormData.batchId),
+          )
         : null;
       const adjustmentDetail = {
         sku: adjustedItem?.sku,
@@ -1228,12 +1575,21 @@ function SkuManagement() {
         type: adjustFormData.type,
         amount: amt,
         reason: adjustFormData.reason,
-        patientName: isDispensed ? adjustFormData.patientName?.trim().toUpperCase() : null,
-        contactNumber: isDispensed ? adjustFormData.contactNumber?.trim() : null,
+        patientName: isDispensed
+          ? adjustFormData.patientName?.trim().toUpperCase()
+          : null,
+        contactNumber: isDispensed
+          ? adjustFormData.contactNumber?.trim()
+          : null,
         batchNum: targetBatchObj ? targetBatchObj.batchNum : null,
       };
 
-      await fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+      await fetchSkus(
+        currentPage,
+        searchQuery,
+        selectedStockFilter,
+        selectedStatusFilter,
+      );
       await fetchSummary();
       handleCloseModal();
       setAdjustSuccessInfo(adjustmentDetail);
@@ -1274,7 +1630,12 @@ function SkuManagement() {
           <button
             type="button"
             onClick={() => {
-              fetchSkus(currentPage, searchQuery, selectedStockFilter, selectedStatusFilter);
+              fetchSkus(
+                currentPage,
+                searchQuery,
+                selectedStockFilter,
+                selectedStatusFilter,
+              );
               fetchSummary();
             }}
             disabled={isLoadingSkus || isLoadingSummary}
@@ -1283,7 +1644,7 @@ function SkuManagement() {
             aria-label="Refresh SKUs"
           >
             <RefreshCw
-              className={`w-4 h-4 ${(isLoadingSkus || isLoadingSummary) ? "animate-spin text-blue-600" : ""}`}
+              className={`w-4 h-4 ${isLoadingSkus || isLoadingSummary ? "animate-spin text-blue-600" : ""}`}
             />
           </button>
           <RoleGuard allowedRoles={[ROLES.PHARMACIST, ROLES.SUPER_ADMIN]}>
@@ -1486,16 +1847,16 @@ function SkuManagement() {
             <thead className="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500 font-semibold border-b border-gray-200">
               <tr>
                 <th scope="col" className="px-6 py-3.5">
-                  SKU & Medicine
+                  Generic Medicine & Brand SKUs
                 </th>
                 <th scope="col" className="px-6 py-3.5">
                   Form & Packaging
                 </th>
                 <th scope="col" className="px-6 py-3.5">
-                  Stock Health & Capacity
+                  Pooled Stock Health & Capacity
                 </th>
                 <th scope="col" className="px-6 py-3.5">
-                  Thresholds (Min / Reorder / Max)
+                  Shared Thresholds (Min / Reorder / Max)
                 </th>
                 <th scope="col" className="px-6 py-3.5">
                   Incoming Orders (Pending / To Receive)
@@ -1570,337 +1931,544 @@ function SkuManagement() {
                     </td>
                   </tr>
                 ))
-              ) : skuList.length > 0 ? (
-                skuList.map((item, index) => {
-                  const status = getStockStatus(item);
-                  const fillPercent = Math.min(
-                    Math.round((item.currentStock / item.maximumLevel) * 100),
-                    100,
-                  );
-                  const skuExpiredCount = item.expiredBatchesCount || 0;
-                  const skuExpiredUnits = item.expiredUnits || 0;
+              ) : groupedList.length > 0 ? (
+                groupedList.map((group, index) => {
+                  const isExpanded = expandedGroups.has(group.settingId);
+                  const pooledStatus = getStockStatus({
+                    currentStock: group.totalUnits,
+                    minimumLevel: group.minimumLevel,
+                    reorderLevel: group.reorderLevel,
+                    maximumLevel: group.maximumLevel,
+                  });
+                  const pooledFillPercent =
+                    group.maximumLevel > 0
+                      ? Math.min(
+                          Math.round(
+                            (group.totalUnits / group.maximumLevel) * 100,
+                          ),
+                          100,
+                        )
+                      : 0;
 
                   return (
-                    <tr
-                      key={item.id}
-                      className="hover:bg-blue-50/30 transition-colors animate-slide-up"
-                      style={{ animationDelay: `${index * 0.05}s` }}
-                    >
-                      {/* SKU & Medicine Details */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-start gap-3">
-                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${
-                            item.status === "Inactive"
-                              ? "bg-slate-100 text-slate-400 border-slate-200"
-                              : "bg-blue-50 text-blue-600 border-blue-100"
-                          } font-semibold text-xs border shrink-0 mt-0.5`}>
-                            <Pill className="w-4 h-4" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className={`font-semibold text-sm ${item.status === "Inactive" ? "text-gray-500 line-through decoration-gray-400" : "text-gray-900"}`}>
-                                {item.brandName}
-                              </span>
-                              <span className="font-mono text-[11px] text-gray-500">
-                                {item.sku}
-                              </span>
-                              {item.status === "Inactive" ? (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
-                                  INACTIVE
-                                </span>
+                    <Fragment key={group.settingId}>
+                      {/* Parent Row: Generic Medicine + Packaging Group */}
+                      <tr
+                        className={`transition-colors animate-slide-up ${
+                          isExpanded
+                            ? "bg-blue-50/40"
+                            : "bg-white hover:bg-blue-50/30"
+                        }`}
+                        style={{ animationDelay: `${index * 0.04}s` }}
+                      >
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-start gap-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleGroupExpand(group.settingId)}
+                              className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-600 border border-blue-200 hover:bg-blue-100 transition-colors shrink-0 mt-0.5 cursor-pointer"
+                              title={
+                                isExpanded
+                                  ? "Collapse brand SKUs"
+                                  : "Expand brand SKUs"
+                              }
+                              aria-label={
+                                isExpanded
+                                  ? "Collapse brand SKUs"
+                                  : "Expand brand SKUs"
+                              }
+                            >
+                              {isExpanded ? (
+                                <ChevronDown className="w-4 h-4" />
                               ) : (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  ACTIVE
-                                </span>
+                                <ChevronRight className="w-4 h-4" />
                               )}
-                            </div>
-                            <div className="text-xs text-gray-500 pb-1 mt-0.5">
-                              <span className="font-mono text-[11px] text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded font-bold">
-                                {item.genericName}
-                              </span>
-                              {item.dosage && ` • ${item.dosage}`}
-                            </div>
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {/* Deduct Expired Batches Button inside row */}
-                              {skuExpiredCount > 0 && (
-                                <RoleGuard
-                                  allowedRoles={[
-                                    ROLES.PHARMACIST,
-                                    ROLES.SUPER_ADMIN,
-                                  ]}
-                                  fallback={
-                                    <span
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300"
-                                      title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units)`}
-                                    >
-                                      <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
-                                      <span>
-                                        Has Expired Batches ({skuExpiredCount})
-                                      </span>
-                                    </span>
+                            </button>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span
+                                  onClick={() =>
+                                    toggleGroupExpand(group.settingId)
                                   }
+                                  className="font-bold text-sm text-gray-900 cursor-pointer hover:text-blue-700 transition-colors"
                                 >
+                                  {group.genericName}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 mt-1 flex-wrap">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+                                  <Layers className="w-3 h-3 text-slate-500" />
+                                  {group.brandCount}{" "}
+                                  {group.brandCount === 1 ? "Brand" : "Brands"}
+                                  {group.activeBrandCount !== group.brandCount
+                                    ? ` (${group.activeBrandCount} Active)`
+                                    : ""}
+                                </span>
+                                {group.dosageStrength && (
+                                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                                    {group.dosageStrength}
+                                  </span>
+                                )}
+                                {group.expiredBatchesCount > 0 && (
                                   <button
                                     type="button"
                                     onClick={() =>
-                                      handleOpenExpiredModalForSku(item)
+                                      toggleGroupExpand(group.settingId)
                                     }
-                                    disabled={isProcessingExpired}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
-                                    title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units). Click to deduct.`}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 transition-colors cursor-pointer"
+                                    title={`${group.expiredBatchesCount} expired batch(es) (${group.expiredUnits.toLocaleString()} units). Expand to deduct.`}
                                   >
                                     <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
                                     <span>
-                                      Has Expired Batches ({skuExpiredCount})
+                                      Expired Batches (
+                                      {group.expiredBatchesCount})
                                     </span>
                                   </button>
-                                </RoleGuard>
-                              )}
+                                )}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
+                        </td>
 
-                      {/* Dosage Form & Packaging */}
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-xs font-semibold text-gray-800">
-                          {item.dosageForm}
-                        </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          {item.packagingUnit}
-                        </div>
-                      </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="text-xs font-semibold text-gray-800">
+                            {group.dosageForm || "—"}
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            {group.packagingUnit || "—"}
+                          </div>
+                        </td>
 
-                      {/* Stock Level & Progress Bar */}
-                      <td className="px-6 py-4 whitespace-nowrap min-w-50">
-                        <div className="flex items-center justify-between text-xs mb-1">
-                          <span className="font-bold text-gray-900">
-                            {item.currentStock}{" "}
-                            <span className="text-gray-400 font-normal">
-                              / {item.maximumLevel}
+                        <td className="px-6 py-4 whitespace-nowrap min-w-50">
+                          <div className="flex items-center justify-between text-xs mb-1">
+                            <span className="font-bold text-gray-900">
+                              {group.totalUnits.toLocaleString()}{" "}
+                              <span className="text-gray-400 font-normal">
+                                / {group.maximumLevel.toLocaleString()}
+                              </span>
                             </span>
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${status.color}`}
-                          >
                             <span
-                              className={`w-1.5 h-1.5 rounded-full ${status.dotColor}`}
+                              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${pooledStatus.color}`}
+                            >
+                              <span
+                                className={`w-1.5 h-1.5 rounded-full ${pooledStatus.dotColor}`}
+                              />
+                              {pooledStatus.label}
+                            </span>
+                          </div>
+                          <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-2 rounded-full transition-all duration-300 ${
+                                group.totalUnits <= group.minimumLevel
+                                  ? "bg-red-500"
+                                  : group.totalUnits <= group.reorderLevel
+                                    ? "bg-amber-500"
+                                    : "bg-emerald-500"
+                              }`}
+                              style={{ width: `${pooledFillPercent}%` }}
                             />
-                            {status.label}
-                          </span>
-                        </div>
-                        {/* Progress Bar */}
-                        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                          <div
-                            className={`h-2 rounded-full transition-all duration-300 ${
-                              item.currentStock <= item.minimumLevel
-                                ? "bg-red-500"
-                                : item.currentStock <= item.reorderLevel
-                                  ? "bg-amber-500"
-                                  : "bg-emerald-500"
-                            }`}
-                            style={{ width: `${fillPercent}%` }}
-                          />
-                        </div>
-                        <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
-                          <span>0</span>
-                          <span>Cap: {item.maximumLevel}</span>
-                        </div>
-                      </td>
+                          </div>
+                          <div className="flex justify-between text-[10px] text-gray-400 mt-0.5">
+                            <span>Pooled Total</span>
+                            <span>
+                              Cap: {group.maximumLevel.toLocaleString()}
+                            </span>
+                          </div>
+                        </td>
 
-                      {/* Threshold Settings */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs">
-                        <div className="flex items-center gap-2">
-                          <div
-                            className="bg-red-50 border border-red-100 text-red-700 px-2 py-1 rounded text-center"
-                            title="Minimum Threshold"
-                          >
-                            <span className="text-[10px] block uppercase font-medium text-red-500">
-                              Min
-                            </span>
-                            <span className="font-bold">
-                              {item.minimumLevel}
-                            </span>
-                          </div>
-                          <div
-                            className="bg-amber-50 border border-amber-100 text-amber-700 px-2 py-1 rounded text-center"
-                            title="Reorder Threshold"
-                          >
-                            <span className="text-[10px] block uppercase font-medium text-amber-500">
-                              Reorder
-                            </span>
-                            <span className="font-bold">
-                              {item.reorderLevel}
-                            </span>
-                          </div>
-                          <div
-                            className="bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1 rounded text-center"
-                            title="Maximum Capacity"
-                          >
-                            <span className="text-[10px] block uppercase font-medium text-gray-400">
-                              Max
-                            </span>
-                            <span className="font-bold">
-                              {item.maximumLevel}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Incoming Orders (Pending & To Receive) */}
-                      <td className="px-6 py-4 whitespace-nowrap text-xs">
-                        <div className="flex items-center gap-2">
-                          {/* 1. Pending Box */}
-                          <div
-                            className={`px-2.5 py-1 rounded text-center min-w-13 border ${
-                              item.pendingUnits > 0
-                                ? "bg-amber-50 border-amber-200 text-amber-700 shadow-xs"
-                                : "bg-gray-50 border-gray-200 text-gray-400"
-                            }`}
-                            title={`Pending Orders / Requests: ${item.pendingUnits || 0} units awaiting approval/ordering`}
-                          >
-                            <span
-                              className={`text-[10px] block uppercase font-medium ${
-                                item.pendingUnits > 0
-                                  ? "text-amber-600"
-                                  : "text-gray-400"
-                              }`}
+                        <td className="px-6 py-4 whitespace-nowrap text-xs">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="bg-red-50 border border-red-100 text-red-700 px-2 py-1 rounded text-center"
+                              title="Shared Minimum Threshold"
                             >
-                              Pending
-                            </span>
-                            <span
-                              className={`font-bold text-xs ${
-                                item.pendingUnits > 0
-                                  ? "text-amber-800"
-                                  : "text-gray-600"
-                              }`}
+                              <span className="text-[10px] block uppercase font-medium text-red-500">
+                                Min
+                              </span>
+                              <span className="font-bold">
+                                {group.minimumLevel}
+                              </span>
+                            </div>
+                            <div
+                              className="bg-amber-50 border border-amber-100 text-amber-700 px-2 py-1 rounded text-center"
+                              title="Shared Reorder Threshold"
                             >
-                              {item.pendingUnits || 0}
-                            </span>
+                              <span className="text-[10px] block uppercase font-medium text-amber-500">
+                                Reorder
+                              </span>
+                              <span className="font-bold">
+                                {group.reorderLevel}
+                              </span>
+                            </div>
+                            <div
+                              className="bg-gray-50 border border-gray-200 text-gray-700 px-2 py-1 rounded text-center"
+                              title="Shared Maximum Capacity"
+                            >
+                              <span className="text-[10px] block uppercase font-medium text-gray-400">
+                                Max
+                              </span>
+                              <span className="font-bold">
+                                {group.maximumLevel}
+                              </span>
+                            </div>
                           </div>
+                        </td>
 
-                          {/* 2. To Receive Box */}
-                          <div
-                            className={`px-2.5 py-1 rounded text-center min-w-16 border ${
-                              item.toReceiveUnits > 0
-                                ? "bg-blue-50 border-blue-200 text-blue-700 shadow-xs"
-                                : "bg-gray-50 border-gray-200 text-gray-400"
-                            }`}
-                            title={`To Receive (Approved Orders): ${item.toReceiveUnits || 0} units awaiting delivery`}
-                          >
-                            <span
-                              className={`text-[10px] block uppercase font-medium ${
-                                item.toReceiveUnits > 0
-                                  ? "text-blue-600"
-                                  : "text-gray-400"
+                        <td className="px-6 py-4 whitespace-nowrap text-xs">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className={`px-2.5 py-1 rounded text-center min-w-13 border ${
+                                group.pendingUnits > 0
+                                  ? "bg-amber-50 border-amber-200 text-amber-700 shadow-xs"
+                                  : "bg-gray-50 border-gray-200 text-gray-400"
                               }`}
+                              title={`Pending Orders across brands: ${group.pendingUnits} units`}
                             >
-                              To Receive
-                            </span>
-                            <span
-                              className={`font-bold text-xs ${
-                                item.toReceiveUnits > 0
-                                  ? "text-blue-800"
-                                  : "text-gray-600"
-                              }`}
-                            >
-                              {item.toReceiveUnits || 0}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Management Actions Group */}
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* 1. View SKU Details */}
-                          <button
-                            type="button"
-                            onClick={() => handleOpenViewModal(item)}
-                            className="btn-secondary p-1.5 text-gray-600 hover:text-blue-600 hover:border-blue-300"
-                            title="View SKU Details"
-                            aria-label="View SKU Details"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* 2. Stock Adjustment, Edit, and Deactivate/Reactivate */}
-                          <RoleGuard
-                            allowedRoles={[ROLES.PHARMACIST, ROLES.SUPER_ADMIN]}
-                          >
-                            {item.status === "Inactive" ? (
-                              <button
-                                type="button"
-                                disabled
-                                className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
-                                title="Cannot adjust stock for an inactive SKU"
-                                aria-label="Stock Adjustment Disabled"
+                              <span
+                                className={`text-[10px] block uppercase font-medium ${
+                                  group.pendingUnits > 0
+                                    ? "text-amber-600"
+                                    : "text-gray-400"
+                                }`}
                               >
-                                <Sliders className="w-3.5 h-3.5 text-gray-300" />
-                              </button>
-                            ) : skuExpiredCount > 0 ? (
+                                Pending
+                              </span>
+                              <span
+                                className={`font-bold text-xs ${
+                                  group.pendingUnits > 0
+                                    ? "text-amber-800"
+                                    : "text-gray-600"
+                                }`}
+                              >
+                                {group.pendingUnits}
+                              </span>
+                            </div>
+                            <div
+                              className={`px-2.5 py-1 rounded text-center min-w-16 border ${
+                                group.toReceiveUnits > 0
+                                  ? "bg-blue-50 border-blue-200 text-blue-700 shadow-xs"
+                                  : "bg-gray-50 border-gray-200 text-gray-400"
+                              }`}
+                              title={`To Receive across brands: ${group.toReceiveUnits} units`}
+                            >
+                              <span
+                                className={`text-[10px] block uppercase font-medium ${
+                                  group.toReceiveUnits > 0
+                                    ? "text-blue-600"
+                                    : "text-gray-400"
+                                }`}
+                              >
+                                To Receive
+                              </span>
+                              <span
+                                className={`font-bold text-xs ${
+                                  group.toReceiveUnits > 0
+                                    ? "text-blue-800"
+                                    : "text-gray-600"
+                                }`}
+                              >
+                                {group.toReceiveUnits}
+                              </span>
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="px-6 py-4 whitespace-nowrap text-right text-xs">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <RoleGuard
+                              allowedRoles={[
+                                ROLES.PHARMACIST,
+                                ROLES.SUPER_ADMIN,
+                              ]}
+                            >
                               <button
                                 type="button"
                                 onClick={() =>
-                                  handleOpenExpiredModalForSku(item)
+                                  handleOpenGroupThresholdModal(group)
                                 }
-                                disabled={isProcessingExpired}
-                                className="p-1.5 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
-                                title={`Deduct ${skuExpiredCount} expired batch(es) (${skuExpiredUnits.toLocaleString()} units)`}
-                                aria-label="Process Expired Batches"
-                              >
-                                <Clock className="w-3.5 h-3.5 text-amber-600" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenAdjustModal(item)}
-                                className="btn-secondary p-1.5 text-gray-600 hover:text-amber-600 hover:border-amber-300"
-                                title="Stock Adjustment (Count / Write-off)"
-                                aria-label="Stock Adjustment"
+                                className="btn-secondary px-2.5 py-1.5 text-[11px] font-semibold text-gray-700 hover:text-emerald-700 hover:border-emerald-300 inline-flex items-center gap-1"
+                                title="Edit Shared Generic Thresholds"
                               >
                                 <Sliders className="w-3.5 h-3.5" />
+                                <span>Thresholds</span>
                               </button>
-                            )}
-
-                            {/* 4. Edit SKU & Thresholds */}
+                            </RoleGuard>
                             <button
                               type="button"
-                              onClick={() => handleOpenEditModal(item)}
-                              className="btn-secondary p-1.5 text-gray-600 hover:text-emerald-600 hover:border-emerald-300"
-                              title="Edit SKU & Thresholds"
-                              aria-label="Edit SKU & Thresholds"
+                              onClick={() => toggleGroupExpand(group.settingId)}
+                              className="btn-secondary px-2.5 py-1.5 text-[11px] font-semibold text-blue-700 border-blue-200 hover:bg-blue-50 inline-flex items-center gap-1"
+                              title={
+                                isExpanded
+                                  ? "Hide brand SKUs"
+                                  : "Show brand SKUs"
+                              }
                             >
-                              <Pencil className="w-3.5 h-3.5" />
+                              {isExpanded ? (
+                                <>
+                                  <ChevronDown className="w-3.5 h-3.5" />
+                                  <span>Hide</span>
+                                </>
+                              ) : (
+                                <>
+                                  <ChevronRight className="w-3.5 h-3.5" />
+                                  <span>Brands ({group.brandCount})</span>
+                                </>
+                              )}
                             </button>
+                          </div>
+                        </td>
+                      </tr>
 
-                            {/* 5. Deactivate OR Reactivate SKU */}
-                            {item.status === "Inactive" ? (
-                              <button
-                                type="button"
-                                disabled={isSubmitting}
-                                onClick={() => handleReactivateSku(item)}
-                                className="btn-secondary p-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
-                                title="Reactivate SKU (Set to Active)"
-                                aria-label="Reactivate SKU"
-                              >
-                                <RotateCcw className="w-3.5 h-3.5" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenDeleteModal(item)}
-                                className="btn-danger p-1.5"
-                                title="Set Inactive (Deactivate SKU)"
-                                aria-label="Deactivate SKU"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </RoleGuard>
-                        </div>
-                      </td>
-                    </tr>
+                      {/* Indented Child Rows: Brand SKUs */}
+                      {isExpanded &&
+                        group.brands.map((item) => {
+                          const skuExpiredCount = item.expiredBatchesCount || 0;
+                          const skuExpiredUnits = item.expiredUnits || 0;
+
+                          return (
+                            <tr
+                              key={item.id}
+                              className="bg-slate-50/70 hover:bg-blue-50/30 transition-colors"
+                            >
+                              <td className="pl-12 pr-6 py-3 whitespace-nowrap border-l-4 border-l-blue-200">
+                                <div className="flex items-start gap-2.5">
+                                  <div
+                                    className={`flex h-7 w-7 items-center justify-center rounded-md ${
+                                      item.status === "Inactive"
+                                        ? "bg-slate-100 text-slate-400 border-slate-200"
+                                        : "bg-white text-blue-600 border-blue-100"
+                                    } border shrink-0 mt-0.5`}
+                                  >
+                                    <Pill className="w-3.5 h-3.5" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span
+                                        className={`font-semibold text-xs ${
+                                          item.status === "Inactive"
+                                            ? "text-gray-500 line-through decoration-gray-400"
+                                            : "text-gray-900"
+                                        }`}
+                                      >
+                                        {item.brandName}
+                                      </span>
+                                      <span className="font-mono text-[11px] text-gray-500 bg-white border border-gray-200 px-1.5 py-0.5 rounded">
+                                        {item.sku}
+                                      </span>
+                                      {item.status === "Inactive" ? (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-300">
+                                          INACTIVE
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                          ACTIVE
+                                        </span>
+                                      )}
+                                    </div>
+                                    {skuExpiredCount > 0 && (
+                                      <div className="mt-1">
+                                        <RoleGuard
+                                          allowedRoles={[
+                                            ROLES.PHARMACIST,
+                                            ROLES.SUPER_ADMIN,
+                                          ]}
+                                          fallback={
+                                            <span
+                                              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300"
+                                              title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units)`}
+                                            >
+                                              <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                              <span>
+                                                Has Expired Batches (
+                                                {skuExpiredCount})
+                                              </span>
+                                            </span>
+                                          }
+                                        >
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              handleOpenExpiredModalForSku(item)
+                                            }
+                                            disabled={isProcessingExpired}
+                                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-300 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
+                                            title={`${skuExpiredCount} batch(es) past expiry (${skuExpiredUnits.toLocaleString()} units). Click to deduct.`}
+                                          >
+                                            <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                            <span>
+                                              Has Expired Batches (
+                                              {skuExpiredCount})
+                                            </span>
+                                          </button>
+                                        </RoleGuard>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-3 whitespace-nowrap">
+                                <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">
+                                  Brand SKU
+                                </span>
+                              </td>
+
+                              <td className="px-6 py-3 whitespace-nowrap">
+                                <div className="flex items-center gap-2 text-xs">
+                                  <span className="font-bold text-gray-800">
+                                    {item.currentStock.toLocaleString()}{" "}
+                                    <span className="font-normal text-gray-500">
+                                      units
+                                    </span>
+                                  </span>
+                                  {group.totalUnits > 0 &&
+                                    item.status === "Active" && (
+                                      <span className="text-[10px] text-slate-400">
+                                        (
+                                        {Math.round(
+                                          (item.currentStock /
+                                            group.totalUnits) *
+                                            100,
+                                        )}
+                                        % of pool)
+                                      </span>
+                                    )}
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-3 whitespace-nowrap">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-500 border border-slate-200">
+                                  Shared via generic group
+                                </span>
+                              </td>
+
+                              <td className="px-6 py-3 whitespace-nowrap text-xs">
+                                <div className="flex items-center gap-2">
+                                  <div
+                                    className={`px-2 py-0.5 rounded text-center min-w-13 border ${
+                                      item.pendingUnits > 0
+                                        ? "bg-amber-50 border-amber-200 text-amber-700"
+                                        : "bg-white border-gray-200 text-gray-400"
+                                    }`}
+                                    title={`Pending Orders: ${item.pendingUnits || 0} units`}
+                                  >
+                                    <span className="font-bold text-[11px]">
+                                      {item.pendingUnits || 0}
+                                    </span>
+                                  </div>
+                                  <div
+                                    className={`px-2 py-0.5 rounded text-center min-w-16 border ${
+                                      item.toReceiveUnits > 0
+                                        ? "bg-blue-50 border-blue-200 text-blue-700"
+                                        : "bg-white border-gray-200 text-gray-400"
+                                    }`}
+                                    title={`To Receive (Approved Orders): ${item.toReceiveUnits || 0} units`}
+                                  >
+                                    <span className="font-bold text-[11px]">
+                                      {item.toReceiveUnits || 0}
+                                    </span>
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td className="px-6 py-3 whitespace-nowrap text-right text-xs">
+                                <div className="flex items-center justify-end gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenViewModal(item)}
+                                    className="btn-secondary p-1.5 text-gray-600 hover:text-blue-600 hover:border-blue-300"
+                                    title="View SKU Details"
+                                    aria-label="View SKU Details"
+                                  >
+                                    <Eye className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <RoleGuard
+                                    allowedRoles={[
+                                      ROLES.PHARMACIST,
+                                      ROLES.SUPER_ADMIN,
+                                    ]}
+                                  >
+                                    {item.status === "Inactive" ? (
+                                      <button
+                                        type="button"
+                                        disabled
+                                        className="p-1.5 rounded border border-gray-200 bg-gray-50 text-gray-300 cursor-not-allowed"
+                                        title="Cannot adjust stock for an inactive SKU"
+                                        aria-label="Stock Adjustment Disabled"
+                                      >
+                                        <Sliders className="w-3.5 h-3.5 text-gray-300" />
+                                      </button>
+                                    ) : skuExpiredCount > 0 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOpenExpiredModalForSku(item)
+                                        }
+                                        disabled={isProcessingExpired}
+                                        className="p-1.5 rounded border border-amber-300 bg-amber-50 text-amber-800 hover:bg-amber-100 hover:border-amber-400 transition-colors shadow-xs cursor-pointer"
+                                        title={`Deduct ${skuExpiredCount} expired batch(es) (${skuExpiredUnits.toLocaleString()} units)`}
+                                        aria-label="Process Expired Batches"
+                                      >
+                                        <Clock className="w-3.5 h-3.5 text-amber-600" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOpenAdjustModal(item)
+                                        }
+                                        className="btn-secondary p-1.5 text-gray-600 hover:text-amber-600 hover:border-amber-300"
+                                        title="Stock Adjustment (Count / Write-off)"
+                                        aria-label="Stock Adjustment"
+                                      >
+                                        <Sliders className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditModal(item)}
+                                      className="btn-secondary p-1.5 text-gray-600 hover:text-emerald-600 hover:border-emerald-300"
+                                      title="Edit Brand SKU"
+                                      aria-label="Edit Brand SKU"
+                                    >
+                                      <Pencil className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {item.status === "Inactive" ? (
+                                      <button
+                                        type="button"
+                                        disabled={isSubmitting}
+                                        onClick={() =>
+                                          handleReactivateSku(item)
+                                        }
+                                        className="btn-secondary p-1.5 text-emerald-600 border-emerald-200 hover:bg-emerald-50 hover:border-emerald-300"
+                                        title="Reactivate SKU (Set to Active)"
+                                        aria-label="Reactivate SKU"
+                                      >
+                                        <RotateCcw className="w-3.5 h-3.5" />
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          handleOpenDeleteModal(item)
+                                        }
+                                        className="btn-danger p-1.5"
+                                        title="Set Inactive (Deactivate SKU)"
+                                        aria-label="Deactivate SKU"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </RoleGuard>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                    </Fragment>
                   );
                 })
               ) : (
@@ -1946,7 +2514,7 @@ function SkuManagement() {
         title={
           modalMode === "add"
             ? "Create New SKU from Medicine Library"
-            : "Edit SKU & Inventory Thresholds"
+            : "Edit Brand SKU"
         }
         size="2xl"
       >
@@ -2106,98 +2674,125 @@ function SkuManagement() {
               )}
             </div>
 
-            {/* Section: Stock Threshold Levels */}
-            <div className="sm:col-span-2 pt-2 border-t border-gray-100">
-              <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
-                <Sliders className="w-3.5 h-3.5 text-blue-600" />
-                Inventory Stock Thresholds
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Minimum Level */}
-                <div className="p-3 rounded-lg bg-red-50/40 border border-red-100">
-                  <label
-                    htmlFor="sku-min"
-                    className="block text-[11px] font-bold text-red-800 uppercase tracking-wider mb-1"
-                  >
-                    Minimum Level <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="sku-min"
-                    type="number"
-                    min="0"
-                    name="minimumLevel"
-                    value={formData.minimumLevel ?? ""}
-                    onChange={handleInputChange}
-                    onFocus={(e) => e.target.select()}
-                    className="input bg-white py-1.5 text-sm font-semibold text-red-900"
-                  />
-                  <span className="text-[10px] text-red-600 block mt-1">
-                    Emergency safety threshold
+            {/* Section: Stock Threshold Levels (Smart Hide: shown only when creating a NEW generic + packaging pool) */}
+            {modalMode === "add" && matchedExistingGenericGroup ? (
+              <div className="sm:col-span-2 p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-emerald-900 uppercase tracking-wider flex items-center gap-1.5">
+                    <Layers className="w-3.5 h-3.5 text-emerald-600" />
+                    Existing Generic Stock Pool Detected
                   </span>
-                  {formErrors.minimumLevel && (
-                    <p className="text-xs text-red-500 mt-1">
-                      {formErrors.minimumLevel}
-                    </p>
-                  )}
+                  <span className="text-[11px] font-medium text-emerald-700">
+                    Shared thresholds already configured
+                  </span>
                 </div>
-
-                {/* Reorder Level */}
-                <div className="p-3 rounded-lg bg-amber-50/40 border border-amber-100">
-                  <label
-                    htmlFor="sku-reorder"
-                    className="block text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-1"
-                  >
-                    Reorder Level <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="sku-reorder"
-                    type="number"
-                    min="1"
-                    name="reorderLevel"
-                    value={formData.reorderLevel ?? ""}
-                    onChange={handleInputChange}
-                    onFocus={(e) => e.target.select()}
-                    className="input bg-white py-1.5 text-sm font-semibold text-amber-900"
-                  />
-                  <span className="text-[10px] text-amber-600 block mt-1">
-                    Triggers purchase requisition
+                <div className="flex items-center gap-2 flex-wrap text-xs">
+                  <span className="px-2.5 py-1 rounded bg-white border border-red-200 text-red-700 font-semibold">
+                    Min: {matchedExistingGenericGroup.minimumLevel}
                   </span>
-                  {formErrors.reorderLevel && (
-                    <p className="text-xs text-red-500 mt-1">
-                      {formErrors.reorderLevel}
-                    </p>
-                  )}
+                  <span className="px-2.5 py-1 rounded bg-white border border-amber-200 text-amber-700 font-semibold">
+                    Reorder: {matchedExistingGenericGroup.reorderLevel}
+                  </span>
+                  <span className="px-2.5 py-1 rounded bg-white border border-emerald-200 text-emerald-700 font-semibold">
+                    Max: {matchedExistingGenericGroup.maximumLevel}
+                  </span>
                 </div>
+                <p className="text-[11px] text-emerald-800/80">
+                  This new brand SKU will join the existing generic pool. To
+                  adjust shared thresholds later, use the{" "}
+                  <strong>Thresholds</strong> button on the generic group row.
+                </p>
+              </div>
+            ) : modalMode === "add" ? (
+              <div className="sm:col-span-2 pt-2 border-t border-gray-100">
+                <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                  <Sliders className="w-3.5 h-3.5 text-blue-600" />
+                  Initial Generic Pool Thresholds
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 rounded-lg bg-red-50/40 border border-red-100">
+                    <label
+                      htmlFor="sku-min"
+                      className="block text-[11px] font-bold text-red-800 uppercase tracking-wider mb-1"
+                    >
+                      Minimum Level <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="sku-min"
+                      type="number"
+                      min="0"
+                      name="minimumLevel"
+                      value={formData.minimumLevel ?? ""}
+                      onChange={handleInputChange}
+                      onFocus={(e) => e.target.select()}
+                      className="input bg-white py-1.5 text-sm font-semibold text-red-900"
+                    />
+                    <span className="text-[10px] text-red-600 block mt-1">
+                      Emergency safety threshold
+                    </span>
+                    {formErrors.minimumLevel && (
+                      <p className="text-xs text-red-500 mt-1">
+                        {formErrors.minimumLevel}
+                      </p>
+                    )}
+                  </div>
 
-                {/* Maximum Level */}
-                <div className="p-3 rounded-lg bg-emerald-50/40 border border-emerald-100">
-                  <label
-                    htmlFor="sku-max"
-                    className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider mb-1"
-                  >
-                    Maximum Level <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    id="sku-max"
-                    type="number"
-                    min="1"
-                    name="maximumLevel"
-                    value={formData.maximumLevel ?? ""}
-                    onChange={handleInputChange}
-                    onFocus={(e) => e.target.select()}
-                    className="input bg-white py-1.5 text-sm font-semibold text-emerald-900"
-                  />
-                  <span className="text-[10px] text-emerald-600 block mt-1">
-                    Storage capacity ceiling
-                  </span>
-                  {formErrors.maximumLevel && (
-                    <p className="text-xs text-red-500 mt-1">
-                      {formErrors.maximumLevel}
-                    </p>
-                  )}
+                  <div className="p-3 rounded-lg bg-amber-50/40 border border-amber-100">
+                    <label
+                      htmlFor="sku-reorder"
+                      className="block text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-1"
+                    >
+                      Reorder Level <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="sku-reorder"
+                      type="number"
+                      min="1"
+                      name="reorderLevel"
+                      value={formData.reorderLevel ?? ""}
+                      onChange={handleInputChange}
+                      onFocus={(e) => e.target.select()}
+                      className="input bg-white py-1.5 text-sm font-semibold text-amber-900"
+                    />
+                    <span className="text-[10px] text-amber-600 block mt-1">
+                      Triggers purchase requisition
+                    </span>
+                    {formErrors.reorderLevel && (
+                      <p className="text-xs text-red-500 mt-1">
+                        {formErrors.reorderLevel}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="p-3 rounded-lg bg-emerald-50/40 border border-emerald-100">
+                    <label
+                      htmlFor="sku-max"
+                      className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider mb-1"
+                    >
+                      Maximum Level <span className="text-red-500">*</span>
+                    </label>
+                    <input
+                      id="sku-max"
+                      type="number"
+                      min="1"
+                      name="maximumLevel"
+                      value={formData.maximumLevel ?? ""}
+                      onChange={handleInputChange}
+                      onFocus={(e) => e.target.select()}
+                      className="input bg-white py-1.5 text-sm font-semibold text-emerald-900"
+                    />
+                    <span className="text-[10px] text-emerald-600 block mt-1">
+                      Storage capacity ceiling
+                    </span>
+                    {formErrors.maximumLevel && (
+                      <p className="text-xs text-red-500 mt-1">
+                        {formErrors.maximumLevel}
+                      </p>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             {/* Catalog Status (Active / Inactive) */}
             {modalMode === "edit" && (
@@ -2365,11 +2960,9 @@ function SkuManagement() {
                     </p>
                     <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
                       This SKU has{" "}
-                      <strong>
-                        {selectedSku.expiredBatchesCount}
-                      </strong>{" "}
-                      expired batch(es). Please deduct expired batches first
-                      before making manual stock adjustments.
+                      <strong>{selectedSku.expiredBatchesCount}</strong> expired
+                      batch(es). Please deduct expired batches first before
+                      making manual stock adjustments.
                     </p>
                   </div>
                 </div>
@@ -2388,7 +2981,13 @@ function SkuManagement() {
                   setAdjustFormData((prev) => ({
                     ...prev,
                     reason: val,
-                    amount: String(val || "").toUpperCase() === "DISPENSED" && (prev.amount === 10 || prev.amount === "" || prev.amount === 0) ? 30 : prev.amount,
+                    amount:
+                      String(val || "").toUpperCase() === "DISPENSED" &&
+                      (prev.amount === 10 ||
+                        prev.amount === "" ||
+                        prev.amount === 0)
+                        ? 30
+                        : prev.amount,
                   }));
                   clearError("batchId");
                 }}
@@ -2412,7 +3011,10 @@ function SkuManagement() {
                         Automated FEFO (First-Expired, First-Out) Deduction
                       </p>
                       <p className="text-[11px] text-blue-800 mt-0.5 leading-relaxed">
-                        Because the adjustment reason is <strong>Dispensed</strong>, the system will automatically deduct units sequentially starting from your nearest-expiring available batch(es).
+                        Because the adjustment reason is{" "}
+                        <strong>Dispensed</strong>, the system will
+                        automatically deduct units sequentially starting from
+                        your nearest-expiring available batch(es).
                       </p>
                     </div>
                   </div>
@@ -2443,7 +3045,9 @@ function SkuManagement() {
                           value={adjustFormData.patientId || ""}
                           placeholder="SELECT OR SEARCH PATIENT..."
                           emptyText="No matching patients found"
-                          onChange={(e, selected) => handlePatientSelect(selected)}
+                          onChange={(e, selected) =>
+                            handlePatientSelect(selected)
+                          }
                           onSelect={(selected) => handlePatientSelect(selected)}
                           onCreateNew={handleSelectCreateNewPatient}
                           createNewText={(query) =>
@@ -2454,7 +3058,7 @@ function SkuManagement() {
                           getOptionLabel={(p) => (p?.name || "").toUpperCase()}
                           getOptionSubtext={(p) =>
                             p?.isNew
-                              ? "New Patient" 
+                              ? "New Patient"
                               : p?.contactNumber
                                 ? `Phone: ${p.contactNumber}`
                                 : "No phone number"
@@ -2468,7 +3072,8 @@ function SkuManagement() {
                         {isNewPatient && (
                           <p className="text-[11px] text-emerald-700 font-medium mt-1 flex items-center gap-1">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
-                            New patient profile will be registered automatically upon dispensing.
+                            New patient profile will be registered automatically
+                            upon dispensing.
                           </p>
                         )}
                       </div>
@@ -2485,7 +3090,8 @@ function SkuManagement() {
                           >
                             {isNewPatient ? (
                               <>
-                                Patient Phone Number <span className="text-red-500">*</span>
+                                Patient Phone Number{" "}
+                                <span className="text-red-500">*</span>
                               </>
                             ) : (
                               "Contact Number (Registered)"
@@ -2606,9 +3212,7 @@ function SkuManagement() {
                         const currentBatchUnits = Number(
                           selectedBatch.units || 0,
                         );
-                        const deltaAmount = Number(
-                          adjustFormData.amount || 0,
-                        );
+                        const deltaAmount = Number(adjustFormData.amount || 0);
                         const validDelta =
                           isNaN(deltaAmount) || deltaAmount < 0
                             ? 0
@@ -2994,12 +3598,14 @@ function SkuManagement() {
             <>
               This will set SKU{" "}
               <span className="font-bold font-mono">{selectedSku.sku}</span> (
-              <span className="font-semibold">{selectedSku.brandName}</span>)
-              to <span className="font-bold text-amber-800">Inactive</span> in{" "}
+              <span className="font-semibold">{selectedSku.brandName}</span>) to{" "}
+              <span className="font-bold text-amber-800">Inactive</span> in{" "}
               <span className="font-bold">
                 {selectedSku.facility || currentFacilityName}
               </span>
-              . It will no longer appear in new orders, reorder quotations, or active dispensing. Historical inventory records and batches will remain safely preserved.
+              . It will no longer appear in new orders, reorder quotations, or
+              active dispensing. Historical inventory records and batches will
+              remain safely preserved.
             </>
           )
         }
@@ -3027,7 +3633,8 @@ function SkuManagement() {
                 <span className="font-semibold text-emerald-950">
                   Medicine:
                 </span>{" "}
-                {adjustSuccessInfo.brandName} ({adjustSuccessInfo.genericName || adjustSuccessInfo.sku})
+                {adjustSuccessInfo.brandName} (
+                {adjustSuccessInfo.genericName || adjustSuccessInfo.sku})
               </p>
               <p>
                 <span className="font-semibold text-emerald-950">
@@ -3255,6 +3862,178 @@ function SkuManagement() {
         }
         confirmText="Done"
       />
+
+      {/* ======================================================== */}
+      {/* 11. EDIT SHARED GENERIC STOCK THRESHOLDS MODAL           */}
+      {/* ======================================================== */}
+      <Modal
+        isOpen={Boolean(editingGroup)}
+        onClose={handleCloseGroupThresholdModal}
+        title="Edit Shared Generic Stock Thresholds"
+        size="lg"
+      >
+        {editingGroup && (
+          <form onSubmit={handleSaveGroupThresholds} className="space-y-4">
+            <div className="p-3.5 rounded-xl bg-blue-50/60 border border-blue-100 space-y-1.5">
+              <div className="text-[11px] font-semibold text-blue-700 uppercase tracking-wider">
+                Generic Stock Pool
+              </div>
+              <div className="font-bold text-sm text-gray-900">
+                {editingGroup.genericName}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+                {editingGroup.dosageStrength && (
+                  <span className="px-2 py-0.5 rounded bg-white border border-blue-200 text-blue-700 font-semibold">
+                    {editingGroup.dosageStrength}
+                  </span>
+                )}
+                {editingGroup.dosageForm && (
+                  <span className="px-2 py-0.5 rounded bg-white border border-gray-200 font-medium">
+                    {editingGroup.dosageForm}
+                  </span>
+                )}
+                {editingGroup.packagingUnit && (
+                  <span className="px-2 py-0.5 rounded bg-white border border-gray-200 font-medium">
+                    {editingGroup.packagingUnit}
+                  </span>
+                )}
+              </div>
+              <div className="text-xs text-gray-600 pt-1">
+                Current Pooled Stock:{" "}
+                <span className="font-bold text-gray-900">
+                  {editingGroup.totalUnits.toLocaleString()} units
+                </span>{" "}
+                across {editingGroup.activeBrandCount} active brand(s)
+              </div>
+            </div>
+
+            {groupThresholdError && (
+              <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-xs text-red-700 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{groupThresholdError}</span>
+              </div>
+            )}
+
+            <div className="pt-2 border-t border-gray-100">
+              <h4 className="text-xs font-bold text-gray-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                <Sliders className="w-3.5 h-3.5 text-blue-600" />
+                Inventory Stock Thresholds
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-lg bg-red-50/40 border border-red-100">
+                  <label
+                    htmlFor="group-min-level"
+                    className="block text-[11px] font-bold text-red-800 uppercase tracking-wider mb-1"
+                  >
+                    Minimum Level <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="group-min-level"
+                    type="number"
+                    min="0"
+                    required
+                    value={groupThresholdForm.minimumLevel}
+                    onChange={(e) =>
+                      setGroupThresholdForm((prev) => ({
+                        ...prev,
+                        minimumLevel: e.target.value,
+                      }))
+                    }
+                    onFocus={(e) => e.target.select()}
+                    className="input bg-white py-1.5 text-sm font-semibold text-red-900"
+                  />
+                  <span className="text-[10px] text-red-600 block mt-1">
+                    Emergency safety threshold
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-amber-50/40 border border-amber-100">
+                  <label
+                    htmlFor="group-reorder-level"
+                    className="block text-[11px] font-bold text-amber-800 uppercase tracking-wider mb-1"
+                  >
+                    Reorder Level <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="group-reorder-level"
+                    type="number"
+                    min="1"
+                    required
+                    value={groupThresholdForm.reorderLevel}
+                    onChange={(e) =>
+                      setGroupThresholdForm((prev) => ({
+                        ...prev,
+                        reorderLevel: e.target.value,
+                      }))
+                    }
+                    onFocus={(e) => e.target.select()}
+                    className="input bg-white py-1.5 text-sm font-semibold text-amber-900"
+                  />
+                  <span className="text-[10px] text-amber-600 block mt-1">
+                    Triggers purchase requisition
+                  </span>
+                </div>
+
+                <div className="p-3 rounded-lg bg-emerald-50/40 border border-emerald-100">
+                  <label
+                    htmlFor="group-max-level"
+                    className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider mb-1"
+                  >
+                    Maximum Level <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    id="group-max-level"
+                    type="number"
+                    min="2"
+                    required
+                    value={groupThresholdForm.maximumLevel}
+                    onChange={(e) =>
+                      setGroupThresholdForm((prev) => ({
+                        ...prev,
+                        maximumLevel: e.target.value,
+                      }))
+                    }
+                    onFocus={(e) => e.target.select()}
+                    className="input bg-white py-1.5 text-sm font-semibold text-emerald-900"
+                  />
+                  <span className="text-[10px] text-emerald-600 block mt-1">
+                    Storage capacity ceiling
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p className="text-[11px] text-gray-500">
+              These thresholds apply to the combined stock of all brand SKUs in
+              this generic + packaging group.
+            </p>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                onClick={handleCloseGroupThresholdModal}
+                className="btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSavingGroupThreshold}
+                className="btn-primary flex items-center gap-1.5"
+              >
+                {isSavingGroupThreshold ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Shared Thresholds</span>
+                )}
+              </button>
+            </div>
+          </form>
+        )}
+      </Modal>
     </div>
   );
 }
