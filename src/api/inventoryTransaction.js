@@ -86,7 +86,7 @@ const inventoryTransactionApi = {
 
   getAdjustmentLogsByPharmacy: (
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
@@ -110,7 +110,7 @@ const inventoryTransactionApi = {
 
   getAdjustmentLogsByFacility: (
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
@@ -130,7 +130,10 @@ const inventoryTransactionApi = {
     );
   },
 
-  getAdjustmentReasons: (pharmacyId, types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE") => {
+  getAdjustmentReasons: (
+    pharmacyId,
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
+  ) => {
     let url = `${API_URL}/reasons?pharmacyId=${pharmacyId}`;
     if (types) {
       const typeParams = Array.isArray(types) ? types.join(",") : types;
@@ -142,7 +145,7 @@ const inventoryTransactionApi = {
   getAdjustmentLogsBySku: (
     skuId,
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
@@ -175,7 +178,7 @@ const inventoryTransactionApi = {
   },
 
   getAdjustmentSummary: (pharmacyId) => {
-    return `${API_URL}/summary?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE`;
+    return `${API_URL}/summary?pharmacyId=${pharmacyId}&types=ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT`;
   },
 };
 

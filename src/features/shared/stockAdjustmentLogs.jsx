@@ -49,6 +49,7 @@ const formatDate = (dateStr) => {
 const normalizeAdjustmentType = (type) => {
   if (!type) return "ADJUSTMENT";
   const upper = String(type).toUpperCase();
+  if (upper === "RECEIPT" || upper === "PO_RECEIPT") return "RECEIPT";
   if (upper === "ADD" || upper === "ADDITION") return "ADD";
   if (upper === "SUBTRACT" || upper === "DEDUCTION") return "SUBTRACT";
   if (upper === "SET" || upper === "RECONCILIATION") return "SET";
@@ -58,6 +59,12 @@ const normalizeAdjustmentType = (type) => {
 const getAdjustmentBadge = (type) => {
   const norm = normalizeAdjustmentType(type);
   switch (norm) {
+    case "RECEIPT":
+      return {
+        label: "PO Batch Receipt",
+        icon: Package,
+        classes: "bg-indigo-50 text-indigo-700 border-indigo-200",
+      };
     case "ADD":
       return {
         label: "Addition",
@@ -124,10 +131,11 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
 
   // Map frontend selectedType to backend InventoryTransaction.Type list
   const backendTypes = useMemo(() => {
+    if (selectedType === "RECEIPT") return "RECEIPT";
     if (selectedType === "ADD") return "ADJUSTMENT_ADD";
     if (selectedType === "SUBTRACT") return "ADJUSTMENT_SUB,DISPENSE";
-    // For ALL or any other selection, query all stock adjustment and dispense records
-    return "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE";
+    // For ALL or any other selection, query stock adjustments, dispenses, and PO batch receipts
+    return "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT";
   }, [selectedType]);
 
   // Facility-wide KPI Summary State
@@ -163,7 +171,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
     try {
       const reasons = await inventoryTransactionService.getAdjustmentReasons(
         targetPharmacyId,
-        "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+        "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
       );
       if (Array.isArray(reasons)) {
         setDistinctReasons(reasons);
@@ -281,8 +289,8 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
             </span>
           </div>
           <p className="text-sm text-gray-500 mt-1">
-            Immutable historical audit ledger tracking all manual inventory
-            additions, spoilage deductions, and reconciliation counts.
+            Immutable historical audit ledger tracking PO batch receipts, manual
+            inventory additions, spoilage deductions, and reconciliation counts.
           </p>
         </div>
 
@@ -477,7 +485,7 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                 setSearchQuery("");
                 setCurrentPage(1);
               }}
-              placeholder="Search by SKU, brand, user, reason..."
+              placeholder="Search by SKU, brand, PO #, batch, reason..."
             />
           </div>
 
@@ -490,9 +498,10 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                 setCurrentPage(1);
               }}
               size="sm"
-              className="w-full sm:w-36"
+              className="w-full sm:w-44"
               options={[
                 { value: "ALL", label: "All Types" },
+                { value: "RECEIPT", label: "PO Batch Receipt (+)" },
                 { value: "ADD", label: "Addition (+)" },
                 { value: "SUBTRACT", label: "Deduction (-)" },
                 { value: "SET", label: "Reconciliation (~)" },
@@ -706,9 +715,21 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
 
                       {/* Reason */}
                       <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-700 max-w-40 truncate">
-                          {log.reason || "Unspecified"}
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-block px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 text-gray-700 max-w-44 truncate w-fit">
+                            {log.reason || "Unspecified"}
+                          </span>
+                          {(log.referenceNumber || log.batchNum) && (
+                            <span className="text-[10px] font-mono text-gray-500 truncate max-w-44">
+                              {[
+                                log.referenceNumber,
+                                log.batchNum ? `Batch: ${log.batchNum}` : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" · ")}
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Adjusted By */}
@@ -866,6 +887,26 @@ function StockAdjustmentLogs({ onBack, initialSkuId = null }) {
                   {selectedLog.facilityName || currentFacilityName}
                 </span>
               </div>
+              {selectedLog.referenceNumber && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <span className="text-gray-400 font-medium block">
+                    Reference / PO Number
+                  </span>
+                  <span className="font-semibold font-mono text-gray-800 text-sm mt-0.5 block">
+                    {selectedLog.referenceNumber}
+                  </span>
+                </div>
+              )}
+              {selectedLog.batchNum && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-100">
+                  <span className="text-gray-400 font-medium block">
+                    Batch Number
+                  </span>
+                  <span className="font-semibold font-mono text-gray-800 text-sm mt-0.5 block">
+                    {selectedLog.batchNum}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Notes */}

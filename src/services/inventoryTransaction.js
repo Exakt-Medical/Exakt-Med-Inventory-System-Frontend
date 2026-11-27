@@ -16,7 +16,9 @@ const normalizeTransactionEntry = (entry) => {
 
   let normAdjustmentType = entry.adjustmentType;
   if (!normAdjustmentType) {
-    if (entry.transactionType === "ADJUSTMENT_ADD") {
+    if (entry.transactionType === "RECEIPT") {
+      normAdjustmentType = "RECEIPT";
+    } else if (entry.transactionType === "ADJUSTMENT_ADD") {
       normAdjustmentType = "ADD";
     } else if (
       entry.transactionType === "ADJUSTMENT_SUB" ||
@@ -215,7 +217,7 @@ const inventoryTransactionService = {
    */
   getAdjustmentLogsByPharmacy: async (
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
@@ -257,7 +259,7 @@ const inventoryTransactionService = {
 
   getAdjustmentLogsByFacility: async (
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
@@ -284,7 +286,7 @@ const inventoryTransactionService = {
    */
   getAdjustmentReasons: async (
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     config = {},
   ) => {
     if (!pharmacyId) {
@@ -308,7 +310,7 @@ const inventoryTransactionService = {
   getAdjustmentLogsBySku: async (
     skuId,
     pharmacyId,
-    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE",
+    types = "ADJUSTMENT_ADD,ADJUSTMENT_SUB,DISPENSE,RECEIPT",
     reason = "",
     page = 0,
     size = 10,
