@@ -398,6 +398,33 @@ const generateSkuPreview = (
   return `${brandCode}-${genericPart}${strengthDigits}-${formCode}-${packPart}`;
 };
 
+const renderClassificationBadges = (classification) => {
+  if (!classification || !String(classification).trim()) return null;
+  const tags = String(classification)
+    .split(",")
+    .map((t) => t.trim().toUpperCase())
+    .filter(Boolean);
+  if (tags.length === 0) return null;
+
+  return tags.map((tag) => {
+    const colorClass =
+      tag === "YAKAP"
+        ? "bg-teal-50 text-teal-700 border-teal-200"
+        : tag === "GAMOT"
+          ? "bg-violet-50 text-violet-700 border-violet-200"
+          : "bg-gray-100 text-gray-700 border-gray-200";
+    return (
+      <span
+        key={tag}
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold tracking-wide border ${colorClass}`}
+        title={`Classification: ${tag}`}
+      >
+        {tag}
+      </span>
+    );
+  });
+};
+
 const mapDtoToSku = (dto) => {
   return {
     id: dto.id,
@@ -407,6 +434,7 @@ const mapDtoToSku = (dto) => {
     medicineId: dto.medicineId,
     brandName: dto.brandName || "",
     genericName: dto.drugDescription || "",
+    classification: dto.classification || "",
     dosage:
       dto.dosageStrength ||
       extractDosageFromDescription(dto.drugDescription) ||
@@ -964,6 +992,7 @@ function SkuManagement() {
           medicineId: selectedMed.id,
           brandName,
           genericName,
+          classification: selectedMed.classification || "",
           dosage: extractedDosage,
           dosageForm,
           packagingUnitCode: detectedCode,
@@ -983,6 +1012,7 @@ function SkuManagement() {
         ...prev,
         medicineId: "",
         genericName: "",
+        classification: "",
         dosage: "",
         dosageForm: "",
         packagingUnitCode: "BX100",
@@ -1044,6 +1074,7 @@ function SkuManagement() {
       sku: skuItem.sku,
       brandName: skuItem.brandName || "",
       genericName: skuItem.genericName || "",
+      classification: skuItem.classification || "",
       dosage: skuItem.dosage || "",
       dosageForm: skuItem.dosageForm || "TABLET",
       packagingUnitCode: matchedUnit ? matchedUnit.code : "BX100",
@@ -2009,6 +2040,9 @@ function SkuManagement() {
                                     {group.dosageStrength}
                                   </span>
                                 )}
+                                {renderClassificationBadges(
+                                  group.classification,
+                                )}
                                 {group.expiredBatchesCount > 0 && (
                                   <button
                                     type="button"
@@ -2554,7 +2588,11 @@ function SkuManagement() {
                     : "-- Choose or search a medicine --"
                 }
                 getOptionLabel={(med) => med.drugDescription || ""}
-                getOptionSubtext={() => ""}
+                getOptionSubtext={(med) =>
+                  med.classification
+                    ? `Classification: ${med.classification}`
+                    : ""
+                }
                 getDisplayValue={(med) => med.drugDescription || ""}
                 getOptionValue={(med) => med.id}
                 error={formErrors.medicineId}
@@ -2588,6 +2626,7 @@ function SkuManagement() {
                     Form: {formData.dosageForm}
                   </span>
                 )}
+                {renderClassificationBadges(formData.classification)}
               </div>
             </div>
           )}

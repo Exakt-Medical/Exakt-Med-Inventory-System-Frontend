@@ -2290,14 +2290,14 @@ function OrderRequest() {
             )}
 
             {/* Medicines Items Table */}
-            <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+            <div className="border border-gray-200 rounded-xl overflow-visible">
               <table className="w-full text-left text-xs text-gray-600">
-                <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
+                <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200">
                   <tr>
-                    <th className="px-3.5 py-2.5 bg-gray-100">
+                    <th className="px-3.5 py-2.5 bg-gray-100 rounded-tl-xl">
                       Generic Medicine
                     </th>
-                    <th className="px-3.5 py-2.5 min-w-56 bg-gray-100">
+                    <th className="px-3.5 py-2.5 min-w-64 bg-gray-100">
                       Brand SKU to Order *
                     </th>
                     <th className="px-3.5 py-2.5 bg-gray-100">Pooled / Max</th>
@@ -2310,7 +2310,7 @@ function OrderRequest() {
                     <th className="px-3.5 py-2.5 w-24 text-right bg-gray-100">
                       Price / Unit
                     </th>
-                    <th className="px-3.5 py-2.5 w-10 text-center bg-gray-100">
+                    <th className="px-3.5 py-2.5 w-10 text-center bg-gray-100 rounded-tr-xl">
                       Action
                     </th>
                   </tr>
@@ -2344,28 +2344,49 @@ function OrderRequest() {
                             </div>
                           </td>
 
-                          {/* Brand SKU Selector + Inline Create Button */}
+                          {/* Brand SKU Selector (ComboBox) + Inline Create Button */}
                           <td className="px-3.5 py-2.5">
                             <div className="flex items-center gap-1.5">
-                              <select
-                                value={item.skuId || ""}
-                                onChange={(e) =>
-                                  handleSelectBrandInOrder(
-                                    rowKey,
-                                    e.target.value,
-                                  )
-                                }
-                                required
-                                className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-xs font-semibold text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              >
-                                <option value="">-- Choose Brand SKU --</option>
-                                {brandOptions.map((b) => (
-                                  <option key={b.id} value={String(b.id)}>
-                                    {b.brandName} ({b.name}) —{" "}
-                                    {Number(b.units || 0).toLocaleString()} u
-                                  </option>
-                                ))}
-                              </select>
+                              <div className="flex-1 min-w-44">
+                                <ComboBox
+                                  id={`order-brand-combobox-${rowKey}`}
+                                  name={`brandSku-${rowKey}`}
+                                  options={brandOptions}
+                                  value={item.skuId || ""}
+                                  onChange={(e) =>
+                                    handleSelectBrandInOrder(
+                                      rowKey,
+                                      e.target.value,
+                                    )
+                                  }
+                                  placeholder="Search or choose brand SKU..."
+                                  emptyText="No matching brand SKUs"
+                                  getOptionValue={(b) => String(b.id)}
+                                  getOptionLabel={(b) =>
+                                    b.brandName || b.name || ""
+                                  }
+                                  getOptionSubtext={() => ""}
+                                  getDisplayValue={(b) =>
+                                    b.brandName || b.name || ""
+                                  }
+                                  onCreateNew={(typed) => {
+                                    handleOpenInlineBrandModal(
+                                      { ...item, lineKey: rowKey },
+                                      "order",
+                                    );
+                                    if (typed) {
+                                      setInlineBrandName(typed.toUpperCase());
+                                    }
+                                  }}
+                                  createNewText={(typed) =>
+                                    typed
+                                      ? `Create new brand "${typed.toUpperCase()}"`
+                                      : "Create new brand SKU"
+                                  }
+                                  inputClassName="!py-1.5 !text-xs !px-2.5 !pr-14"
+                                  className="w-full text-xs"
+                                />
+                              </div>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -2948,19 +2969,19 @@ function OrderRequest() {
                 </p>
               )}
 
-              <div className="border border-gray-200 rounded-xl overflow-hidden max-h-60 overflow-y-auto">
+              <div className="border border-gray-200 rounded-xl overflow-visible">
                 <table className="w-full text-left text-xs text-gray-600">
-                  <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 sticky top-0 z-10 border-b border-gray-200">
+                  <thead className="bg-gray-100 text-[10px] uppercase font-bold text-gray-600 border-b border-gray-200">
                     <tr>
-                      <th className="px-3.5 py-2.5">Generic Medicine</th>
-                      <th className="px-3.5 py-2.5 min-w-56">Brand SKU to Order *</th>
+                      <th className="px-3.5 py-2.5 rounded-tl-xl">Generic Medicine</th>
+                      <th className="px-3.5 py-2.5 min-w-64">Brand SKU to Order *</th>
                       <th className="px-3.5 py-2.5 w-20">Pooled</th>
                       <th className="px-3.5 py-2.5 w-24">Units *</th>
                       <th className="px-3.5 py-2.5 w-28">Total Price (₱) *</th>
                       <th className="px-3.5 py-2.5 w-24 text-right">
                         Price / Unit
                       </th>
-                      <th className="px-3.5 py-2.5 w-10 text-center">Action</th>
+                      <th className="px-3.5 py-2.5 w-10 text-center rounded-tr-xl">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 bg-white">
@@ -2989,30 +3010,46 @@ function OrderRequest() {
                               </div>
                             </td>
 
-                            {/* Brand SKU Selector + Inline Create Button */}
+                            {/* Brand SKU Selector (ComboBox) + Inline Create Button */}
                             <td className="px-3.5 py-2.5">
                               <div className="flex items-center gap-1.5">
-                                <select
-                                  value={item.skuId || ""}
-                                  onChange={(e) =>
-                                    handleSelectBrandInConversion(
-                                      item.lineKey,
-                                      e.target.value,
-                                    )
-                                  }
-                                  required
-                                  className="flex-1 min-w-0 px-2 py-1.5 border border-gray-300 rounded-md text-xs font-semibold text-gray-800 bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                >
-                                  <option value="">
-                                    -- Choose Brand SKU --
-                                  </option>
-                                  {brandOptions.map((b) => (
-                                    <option key={b.id} value={String(b.id)}>
-                                      {b.brandName} ({b.name}) —{" "}
-                                      {Number(b.units || 0).toLocaleString()} u
-                                    </option>
-                                  ))}
-                                </select>
+                                <div className="flex-1 min-w-44">
+                                  <ComboBox
+                                    id={`convert-brand-combobox-${item.lineKey}`}
+                                    name={`convertBrandSku-${item.lineKey}`}
+                                    options={brandOptions}
+                                    value={item.skuId || ""}
+                                    onChange={(e) =>
+                                      handleSelectBrandInConversion(
+                                        item.lineKey,
+                                        e.target.value,
+                                      )
+                                    }
+                                    placeholder="Search or choose brand SKU..."
+                                    emptyText="No matching brand SKUs"
+                                    getOptionValue={(b) => String(b.id)}
+                                    getOptionLabel={(b) =>
+                                      b.brandName || b.name || ""
+                                    }
+                                    getOptionSubtext={() => ""}
+                                    getDisplayValue={(b) =>
+                                      b.brandName || b.name || ""
+                                    }
+                                    onCreateNew={(typed) => {
+                                      handleOpenInlineBrandModal(item);
+                                      if (typed) {
+                                        setInlineBrandName(typed.toUpperCase());
+                                      }
+                                    }}
+                                    createNewText={(typed) =>
+                                      typed
+                                        ? `Create new brand "${typed.toUpperCase()}"`
+                                        : "Create new brand SKU"
+                                    }
+                                    inputClassName="!py-1.5 !text-xs !px-2.5 !pr-14"
+                                    className="w-full text-xs"
+                                  />
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() =>
